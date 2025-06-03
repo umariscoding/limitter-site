@@ -7,7 +7,6 @@ import Link from "next/link";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import { useAuth } from "../context/AuthContext";
-import ContactForm from "../components/ContactForm";
 
 export default function Home() {
   const { user, loading } = useAuth();
@@ -410,80 +409,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Contact Section */}
-        <section id="contact" className="py-16 px-4">
-          <div className="container mx-auto max-w-6xl">
-            <div className="text-center mb-12">
-              <h2 className="text-3xl font-bold mb-4">Get in Touch</h2>
-              <p className="text-xl text-gray-dark dark:text-gray max-w-2xl mx-auto">
-                Have questions about Limiter? We're here to help. Reach out to our team and we'll get back to you as soon as possible.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-              {/* Contact Information */}
-              <div className="space-y-8">
-                <div>
-                  <h3 className="text-2xl font-bold mb-6">Contact Information</h3>
-                  <div className="space-y-6">
-                    <div className="flex items-start">
-                      <div className="flex-shrink-0">
-                        <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                          <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                          </svg>
-                        </div>
-                      </div>
-                      <div className="ml-4">
-                        <h4 className="text-lg font-semibold">Email Support</h4>
-                        <p className="text-gray-dark dark:text-gray">support@limiter.app</p>
-                        <p className="text-sm text-gray mt-1">We typically respond within 24 hours</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start">
-                      <div className="flex-shrink-0">
-                        <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                          <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                          </svg>
-                        </div>
-                      </div>
-                      <div className="ml-4">
-                        <h4 className="text-lg font-semibold">Live Chat</h4>
-                        <p className="text-gray-dark dark:text-gray">Available for Pro & Elite users</p>
-                        <p className="text-sm text-gray mt-1">Monday - Friday, 9 AM - 5 PM PST</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start">
-                      <div className="flex-shrink-0">
-                        <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                          <svg className="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                        </div>
-                      </div>
-                      <div className="ml-4">
-                        <h4 className="text-lg font-semibold">Bug Reports</h4>
-                        <p className="text-gray-dark dark:text-gray">bugs@limiter.app</p>
-                        <p className="text-sm text-gray mt-1">Help us improve Limiter by reporting issues</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Contact Form */}
-              <div className="bg-background rounded-xl shadow-sm border border-gray-light dark:border-gray-dark/30 p-8">
-                <h3 className="text-2xl font-bold mb-6">Send us a Message</h3>
-                
-                <ContactForm />
-              </div>
-            </div>
-          </div>
-        </section>
-
         {/* CTA Section */}
         <section className="py-16 px-4">
           <div className="container mx-auto max-w-4xl">
@@ -505,15 +430,6 @@ export default function Home() {
                 >
                   Get Chrome Extension
                 </Link>
-              </div>
-              
-              <div className="mt-6 text-center">
-                <button 
-                  onClick={() => scrollToSection('contact')}
-                  className="text-gray-dark dark:text-gray hover:text-primary transition-colors"
-                >
-                  Have questions? Contact us →
-                </button>
               </div>
             </div>
           </div>
