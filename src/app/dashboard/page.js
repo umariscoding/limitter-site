@@ -35,6 +35,28 @@ export default function Dashboard() {
         url.searchParams.delete("payment");
         window.history.replaceState({}, "", url);
         
+        // Refresh user data to get updated subscription
+        if (refreshUserData) {
+          refreshUserData();
+        }
+        
+        // Also refresh dashboard data to show updated subscription info
+        if (user?.uid) {
+          const fetchUpdatedData = async () => {
+            try {
+              const [dashData, subData] = await Promise.all([
+                getDashboardData(user.uid),
+                getUserSubscription(user.uid)
+              ]);
+              setDashboardData(dashData);
+              setSubscription(subData);
+            } catch (error) {
+              console.error("Error refreshing dashboard data:", error);
+            }
+          };
+          fetchUpdatedData();
+        }
+        
         // Hide the message after 5 seconds
         setTimeout(() => setPaymentSuccess(false), 5000);
       }

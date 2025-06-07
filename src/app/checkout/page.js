@@ -129,18 +129,34 @@ export default function Checkout() {
     setError("");
 
     try {
-      // Simulate payment processing
-      console.log("💳 Processing payment for plan:", selectedPlan);
+      console.log("🔄 Processing subscription upgrade to:", selectedPlan);
       
-      // In a real app, you would integrate with Stripe, PayPal, etc.
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Call our API to update the subscription
+      const response = await fetch('/api/update-subscription', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          plan: selectedPlan,
+          userId: user.uid
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update subscription');
+      }
+
+      console.log("✅ Subscription updated successfully:", data);
       
-      // For demo purposes, we'll just redirect to dashboard
-      console.log("✅ Payment successful, redirecting to dashboard");
+      // Redirect to dashboard with success message
       router.push("/dashboard?payment=success");
       
     } catch (err) {
-      setError("Payment failed. Please try again.");
+      console.error("❌ Subscription update failed:", err);
+      setError(err.message || "Failed to update subscription. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -375,7 +391,7 @@ export default function Checkout() {
                   disabled={isLoading}
                   className="w-full py-3 px-4 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50 font-medium"
                 >
-                  {isLoading ? "Processing..." : `Complete Purchase - $${currentPrice}`}
+                  {isLoading ? "Upgrading Plan..." : `Upgrade to ${plan.name} - $${currentPrice}/month`}
                 </button>
 
                 {/* Security Notice */}

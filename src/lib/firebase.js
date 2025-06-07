@@ -358,6 +358,32 @@ export const createSubscription = async (userId, plan) => {
   }
 };
 
+export const updateUserSubscription = async (userId, plan) => {
+  try {
+    // First check if subscription exists
+    const existingSubscription = await getUserSubscription(userId);
+    
+    if (existingSubscription) {
+      // Update existing subscription
+      const updateData = {
+        plan: plan,
+        status: 'active',
+        updated_at: serverTimestamp(),
+        expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year from now
+      };
+      
+      await updateDoc(doc(db, 'subscriptions', userId), updateData);
+      return { id: userId, ...existingSubscription, ...updateData };
+    } else {
+      // Create new subscription if doesn't exist
+      return await createSubscription(userId, plan);
+    }
+  } catch (error) {
+    console.error("Error in updateUserSubscription:", error);
+    throw error;
+  }
+};
+
 // Enhanced statistics functions
 export const getUserStatistics = async (userId) => {
   try {
