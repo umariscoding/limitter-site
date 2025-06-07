@@ -9,12 +9,13 @@ import Settings from "../../components/Settings";
 import SiteManager from "../../components/SiteManager";
 import BlockedSitesModal from "../../components/BlockedSitesModal";
 import { useAuth } from "../../context/AuthContext";
-import { getUserSubscription } from "../../lib/firebase";
+import { getUserSubscription, getDashboardData } from "../../lib/firebase";
 
 export default function Dashboard() {
-  const { user, userStats, blockedSites, loading, logout } = useAuth();
+  const { user, userStats, blockedSites, loading, logout, refreshUserData } = useAuth();
   const router = useRouter();
   const [subscription, setSubscription] = useState(null);
+  const [dashboardData, setDashboardData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showSiteManager, setShowSiteManager] = useState(false);
@@ -46,14 +47,25 @@ export default function Dashboard() {
       return;
     }
 
-    // Fetch subscription data if user exists
-    const fetchSubscription = async () => {
+    // Fetch all dashboard data if user exists
+    const fetchDashboardData = async () => {
       if (user?.uid) {
         try {
-          const subData = await getUserSubscription(user.uid);
+          console.log("📊 Loading dashboard data...");
+          
+          // Fetch enhanced dashboard data and subscription in parallel
+          const [dashData, subData] = await Promise.all([
+            getDashboardData(user.uid),
+            getUserSubscription(user.uid)
+          ]);
+          
+          console.log("📈 Dashboard data loaded:", dashData);
+          
+          setDashboardData(dashData);
           setSubscription(subData);
+          
         } catch (error) {
-          console.error("Error fetching subscription:", error);
+          console.error("❌ Error fetching dashboard data:", error);
         } finally {
           setIsLoading(false);
         }
@@ -61,7 +73,7 @@ export default function Dashboard() {
     };
 
     if (user) {
-      fetchSubscription();
+      fetchDashboardData();
     } else if (!loading) {
       setIsLoading(false);
     }
@@ -160,6 +172,30 @@ export default function Dashboard() {
             </div>
           )}
           
+          {/* Enhanced Stats Summary */}
+          {dashboardData?.insights && (
+            <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-blue-800 dark:text-blue-200">Quick Insights</h3>
+                  <p className="text-sm text-blue-700 dark:text-blue-300">
+                    {dashboardData.insights.recentActivity > 0 ? 
+                      `${dashboardData.insights.recentActivity} sites accessed this week` : 
+                      'No recent activity detected'}
+                    {dashboardData.insights.averagePerSite > 0 && 
+                      ` • Average ${dashboardData.insights.averagePerSite}m per site`}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-blue-600 dark:text-blue-400">
+                    Last updated: {dashboardData.lastUpdated ? 
+                      new Date(dashboardData.lastUpdated).toLocaleTimeString() : 'Now'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Quick Stats */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
@@ -170,8 +206,10 @@ export default function Dashboard() {
                   </svg>
                 </div>
                 <div className="ml-4">
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Sites Blocked</p>
-                  <p className="text-2xl font-bold">{userStats?.totalSitesBlocked || blockedSites?.length || 0}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Sites Tracking</p>
+                  <p className="text-2xl font-bold">
+                    {dashboardData?.stats?.sitesBlocked ?? userStats?.totalSitesBlocked ?? blockedSites?.length ?? 0}
+                  </p>
                 </div>
               </div>
             </div>
@@ -186,7 +224,8 @@ export default function Dashboard() {
                 <div className="ml-4">
                   <p className="text-sm text-gray-600 dark:text-gray-400">Time Saved</p>
                   <p className="text-2xl font-bold">
-                    {userStats?.totalTimeSaved ? `${Math.round(userStats.totalTimeSaved / 60 * 10) / 10}h` : '0h'}
+                    {dashboardData?.stats?.timeSaved ? `${dashboardData.stats.timeSaved}h` : 
+                     userStats?.totalTimeSaved ? `${Math.round(userStats.totalTimeSaved / 60 * 10) / 10}h` : '0h'}
                   </p>
                 </div>
               </div>
@@ -201,7 +240,9 @@ export default function Dashboard() {
                 </div>
                 <div className="ml-4">
                   <p className="text-sm text-gray-600 dark:text-gray-400">Active Sites</p>
-                  <p className="text-2xl font-bold">{userStats?.activeSitesBlocked || 0}</p>
+                  <p className="text-2xl font-bold">
+                    {dashboardData?.stats?.activeSites ?? userStats?.activeSitesBlocked ?? 0}
+                  </p>
                 </div>
               </div>
             </div>
@@ -216,7 +257,8 @@ export default function Dashboard() {
                 <div className="ml-4">
                   <p className="text-sm text-gray-600 dark:text-gray-400">Today's Time</p>
                   <p className="text-2xl font-bold">
-                    {userStats?.todayTimeSpent ? `${Math.round(userStats.todayTimeSpent)}m` : '0m'}
+                    {dashboardData?.stats?.todayTime ? `${dashboardData.stats.todayTime}m` : 
+                     userStats?.todayTimeSpent ? `${Math.round(userStats.todayTimeSpent)}m` : '0m'}
                   </p>
                 </div>
               </div>
@@ -417,20 +459,14 @@ export default function Dashboard() {
                             <svg className="w-5 h-5 text-primary mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                             </svg>
-                            <span className="font-medium">Blocked Sites</span>
+                            <span className="font-medium">Tracking Sites</span>
                           </div>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">Manage your blocked sites ({blockedSites.length})</p>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">
+                            Manage your tracking sites ({dashboardData?.sites?.total ?? blockedSites.length})
+                          </p>
                         </button>
                         
-                        <button className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left">
-                          <div className="flex items-center mb-2">
-                            <svg className="w-5 h-5 text-primary mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                            </svg>
-                            <span className="font-medium">View Stats</span>
-                          </div>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">Check your progress</p>
-                        </button>
+
                         
                         <button 
                           onClick={handleSettingsClick}
@@ -453,25 +489,28 @@ export default function Dashboard() {
                   <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
                     <div className="p-6">
                       <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-lg font-semibold">Your Blocked Sites</h2>
+                        <h2 className="text-lg font-semibold">Your Tracking Sites</h2>
                         <button
                           onClick={handleViewSitesClick}
                           className="text-sm text-primary hover:underline font-medium"
                         >
-                          View All ({blockedSites.length}) →
+                          {
+                            console.log(blockedSites)
+                          }
+                          View All ({dashboardData?.sites?.total ?? blockedSites.length}) →
                         </button>
                       </div>
                       
-                      {blockedSites.length === 0 ? (
+                      {(dashboardData?.sites?.hasData === false || blockedSites.length === 0) ? (
                         <div className="text-center py-8">
                           <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-3">
                             <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                             </svg>
                           </div>
-                          <h3 className="font-medium text-gray-900 dark:text-white mb-1">No blocked sites yet</h3>
+                          <h3 className="font-medium text-gray-900 dark:text-white mb-1">No tracking sites yet</h3>
                           <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                            Start by adding websites you want to limit your time on.
+                            Start by adding websites you want to track and limit your time on.
                           </p>
                           <button
                             onClick={handleAddSiteClick}
@@ -503,7 +542,20 @@ export default function Dashboard() {
                                       {site.isActive !== false ? 'Active' : 'Inactive'}
                                     </div>
                                     <div className="text-xs text-gray-500 dark:text-gray-400">
-                                      {site.timeLimit || 30}s
+                                      {(() => {
+                                        const totalSeconds = site.time_limit || 1800; // Default 30 minutes
+                                        const hours = Math.floor(totalSeconds / 3600);
+                                        const minutes = Math.floor((totalSeconds % 3600) / 60);
+                                        const seconds = totalSeconds % 60;
+                                        
+                                        if (hours > 0) {
+                                          return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+                                        } else if (minutes > 0) {
+                                          return `${minutes}m`;
+                                        } else {
+                                          return `${seconds}s`;
+                                        }
+                                      })()}
                                     </div>
                                   </div>
                                 </div>
@@ -539,7 +591,7 @@ export default function Dashboard() {
         editingSiteData={editingSiteData}
       />
       
-      {/* Blocked Sites Modal */}
+      {/* Tracking Sites Modal */}
       <BlockedSitesModal 
         isOpen={showBlockedSitesModal}
         onClose={handleCloseBlockedSitesModal}

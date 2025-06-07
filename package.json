@@ -6,10 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "setup:firebase": "node scripts/setup-firebase.js",
+    "setup:quick": "node scripts/quick-setup.js"
   },
   "dependencies": {
-    "firebase": "^11.8.1",
+    "firebase": "^10.13.2",
     "next": "15.3.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

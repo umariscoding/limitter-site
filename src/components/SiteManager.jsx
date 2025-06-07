@@ -17,7 +17,8 @@ export default function SiteManager({ isOpen, onClose, editingSiteData = null })
   const [formData, setFormData] = useState({
     name: '',
     url: '',
-    timeLimit: 30
+    hours: 0,
+    minutes: 30 // Default 30 minutes
   });
 
   // UI state
@@ -30,10 +31,16 @@ export default function SiteManager({ isOpen, onClose, editingSiteData = null })
     if (isOpen) {
       if (editingSiteData) {
         setEditingSite(editingSiteData);
+        // Convert seconds back to hours and minutes for editing
+        const totalSeconds = editingSiteData.time_limit || 1800; // Default 30 minutes = 1800 seconds
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        
         setFormData({
           name: editingSiteData.name || '',
           url: editingSiteData.url || '',
-          timeLimit: editingSiteData.timeLimit || 30
+          hours: hours,
+          minutes: minutes
         });
       } else {
         resetForm();
@@ -45,7 +52,8 @@ export default function SiteManager({ isOpen, onClose, editingSiteData = null })
     setFormData({
       name: '',
       url: '',
-      timeLimit: 30
+      hours: 0,
+      minutes: 30
     });
     setEditingSite(null);
     setMessage({ type: '', text: '' });
@@ -75,8 +83,10 @@ export default function SiteManager({ isOpen, onClose, editingSiteData = null })
       return false;
     }
 
-    if (formData.timeLimit < 1 || formData.timeLimit > 300) {
-      showMessage('error', 'Time limit must be between 1-300 seconds');
+    // Time limit validation
+    const totalMinutes = (formData.hours * 60) + formData.minutes;
+    if (totalMinutes < 1 || totalMinutes > 1440) {
+      showMessage('error', 'Time limit must be between 1 minute and 24 hours');
       return false;
     }
 
@@ -89,16 +99,19 @@ export default function SiteManager({ isOpen, onClose, editingSiteData = null })
 
     setIsLoading(true);
     try {
-      const siteData = {
-        ...formData,
+      // Convert hours and minutes to total seconds
+      const totalSeconds = (formData.hours * 3600) + (formData.minutes * 60);
+      
+      const baseSiteData = {
+        name: formData.name,
         url: formData.url.startsWith('http') ? formData.url : `https://${formData.url}`,
-        isActive: true,
-        createdAt: editingSite ? editingSite.createdAt : new Date(),
-        updatedAt: new Date()
+        timeLimit: totalSeconds, // Store in seconds
+        isActive: true
       };
 
       if (editingSite) {
-        const result = await updateSite(editingSite.id, siteData);
+        // For updates, don't include createdAt - Firebase will handle updatedAt
+        const result = await updateSite(editingSite.id, baseSiteData);
         if (result.success) {
           showMessage('success', 'Site updated successfully!');
           setTimeout(() => {
@@ -109,7 +122,8 @@ export default function SiteManager({ isOpen, onClose, editingSiteData = null })
           showMessage('error', result.error || 'Failed to update site');
         }
       } else {
-        const result = await addSite(siteData);
+        // For new sites, let Firebase handle timestamps
+        const result = await addSite(baseSiteData);
         if (result.success) {
           showMessage('success', 'Site added successfully!');
           setTimeout(() => {
@@ -163,8 +177,22 @@ export default function SiteManager({ isOpen, onClose, editingSiteData = null })
         {/* Content */}
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
           {/* Add/Edit Form */}
+          <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <div className="flex items-start gap-3">
+              <svg className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div>
+                <h4 className="font-medium text-blue-800 dark:text-blue-200 mb-1">Daily Time Limits</h4>
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  Set how many minutes you want to spend on this website each day. Time resets at midnight.
+                </p>
+              </div>
+            </div>
+          </div>
+          
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-6">
               <div>
                 <label className="block text-sm font-medium mb-2">Site Name</label>
                 <input
@@ -190,15 +218,44 @@ export default function SiteManager({ isOpen, onClose, editingSiteData = null })
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Time Limit (seconds)</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="300"
-                  value={formData.timeLimit}
-                  onChange={(e) => setFormData(prev => ({ ...prev, timeLimit: parseInt(e.target.value) || 30 }))}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent"
-                />
+                <label className="block text-sm font-medium mb-2">Daily Time Limit</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Hours</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        max="24"
+                        value={formData.hours}
+                        onChange={(e) => setFormData(prev => ({ ...prev, hours: parseInt(e.target.value) || 0 }))}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent"
+                      />
+                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                        <span className="text-gray-500 dark:text-gray-400 text-sm">h</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Minutes</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        max="59"
+                        value={formData.minutes}
+                        onChange={(e) => setFormData(prev => ({ ...prev, minutes: parseInt(e.target.value) || 0 }))}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent"
+                      />
+                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                        <span className="text-gray-500 dark:text-gray-400 text-sm">m</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Maximum: 24 hours per day. Minimum: 1 minute total.
+                </p>
               </div>
             </div>
 

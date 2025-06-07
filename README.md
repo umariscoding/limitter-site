@@ -1,17 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Limiter Site
+
+A Next.js application for website blocking and time management, built with Firebase for authentication and data storage.
+
+## Tech Stack
+
+- **Frontend**: Next.js 15 with React 19
+- **Authentication**: Firebase Auth
+- **Database**: Firestore
+- **Styling**: Tailwind CSS
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+1. Node.js 18+ installed
+2. A Firebase project set up (see [FIREBASE_SETUP.md](FIREBASE_SETUP.md))
+
+### Installation
+
+1. Clone the repository
+2. Install dependencies:
+
+```bash
+npm install
+```
+
+3. Set up your Firebase configuration (see [FIREBASE_SETUP.md](FIREBASE_SETUP.md))
+
+4. Run the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.

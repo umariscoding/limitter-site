@@ -64,7 +64,7 @@ export default function BlockedSitesModal({ isOpen, onClose, onEditSite }) {
         {/* Header */}
         <div className="p-6 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold">Manage Blocked Sites</h2>
+            <h2 className="text-2xl font-bold">Manage Tracking Sites</h2>
             <button
               onClick={onClose}
               className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -115,12 +115,12 @@ export default function BlockedSitesModal({ isOpen, onClose, onEditSite }) {
                   </svg>
                 </div>
                 <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                  {searchTerm ? 'No sites found' : 'No blocked sites yet'}
+                  {searchTerm ? 'No sites found' : 'No tracking sites yet'}
                 </h3>
                 <p className="text-gray-500 dark:text-gray-400 max-w-md mx-auto">
                   {searchTerm 
                     ? 'Try adjusting your search terms to find the site you\'re looking for.'
-                    : 'Add your first site to start managing your browsing time and stay focused on what matters.'
+                    : 'Add your first site to start tracking your browsing time and stay focused on what matters.'
                   }
                 </p>
               </div>
@@ -138,23 +138,40 @@ export default function BlockedSitesModal({ isOpen, onClose, onEditSite }) {
                         </p>
                       </div>
                       <div className={`px-2 py-1 rounded text-xs font-medium flex-shrink-0 ml-2 ${
-                        site.isActive !== false
+                        site.time_remaining === 0 || site.is_blocked
+                          ? 'bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-400'
+                          : site.is_active !== false
                           ? 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-400'
                           : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
                       }`}>
-                        {site.isActive !== false ? 'Active' : 'Inactive'}
+                        {site.time_remaining === 0 || site.is_blocked ? 'Blocked' : site.is_active !== false ? 'Active' : 'Inactive'}
                       </div>
                     </div>
 
                     <div className="space-y-2 mb-4">
                       <div className="flex justify-between text-sm">
-                        <span className="text-gray-600 dark:text-gray-400">Time Limit:</span>
-                        <span className="font-medium">{site.timeLimit || 30}s</span>
+                        <span className="text-gray-600 dark:text-gray-400">Daily Limit:</span>
+                        <span className="font-medium">
+                          {(() => {
+                            const totalSeconds = site.time_limit || 1800; // Default 30 minutes
+                            const hours = Math.floor(totalSeconds / 3600);
+                            const minutes = Math.floor((totalSeconds % 3600) / 60);
+                            const seconds = totalSeconds % 60;
+                            
+                            if (hours > 0) {
+                              return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+                            } else if (minutes > 0) {
+                              return `${minutes}m`;
+                            } else {
+                              return `${seconds}s`;
+                            }
+                          })()}
+                        </span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600 dark:text-gray-400">Added:</span>
                         <span className="font-medium">
-                          {site.createdAt ? new Date(site.createdAt.seconds * 1000).toLocaleDateString() : 'Recently'}
+                          {site.created_at ? new Date(site.created_at.seconds * 1000).toLocaleDateString() : 'Recently'}
                         </span>
                       </div>
                     </div>

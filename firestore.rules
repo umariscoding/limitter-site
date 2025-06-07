@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // TEMPORARY TEST MODE - ALLOWS ALL ACCESS
+    // ⚠️ WARNING: This is for development only!
+    // Switch to firestore.rules for production
+    allow read, write: if true;
+  }
+} 
