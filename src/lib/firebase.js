@@ -351,6 +351,18 @@ export const createSubscription = async (userId, plan) => {
     };
 
     await setDoc(doc(db, 'subscriptions', userId), subscriptionDoc);
+    
+    // Grant monthly overrides if creating Pro plan subscription
+    if (plan === 'pro') {
+      try {
+        await grantMonthlyFreeOverrides(userId);
+        console.log("✅ Monthly overrides granted for new Pro subscriber");
+      } catch (error) {
+        console.error("⚠️ Error granting monthly overrides:", error);
+        // Don't fail the subscription creation if override grant fails
+      }
+    }
+    
     return { id: userId, ...subscriptionDoc };
   } catch (error) {
     console.error("Error in createSubscription:", error);
@@ -373,6 +385,18 @@ export const updateUserSubscription = async (userId, plan) => {
       };
       
       await updateDoc(doc(db, 'subscriptions', userId), updateData);
+      
+      // Grant monthly overrides if upgrading to Pro plan
+      if (plan === 'pro') {
+        try {
+          await grantMonthlyFreeOverrides(userId);
+          console.log("✅ Monthly overrides granted for new Pro subscriber");
+        } catch (error) {
+          console.error("⚠️ Error granting monthly overrides:", error);
+          // Don't fail the subscription update if override grant fails
+        }
+      }
+      
       return { id: userId, ...existingSubscription, ...updateData };
     } else {
       // Create new subscription if doesn't exist
@@ -380,6 +404,395 @@ export const updateUserSubscription = async (userId, plan) => {
     }
   } catch (error) {
     console.error("Error in updateUserSubscription:", error);
+    throw error;
+  }
+};
+
+// Override Management Functions
+export const getUserOverrideStats = async (userId) => {
+  try {
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    
+    const overrideDoc = await getDoc(doc(db, 'user_overrides', userId));
+    
+    if (!overrideDoc.exists()) {
+      // Create initial override document
+      const initialData = {
+        user_id: userId,
+        // Override tracking
+        overrides: 0,                    // Current override balance (all overrides available)
+        total_overrides_purchased: 0,   // Total overrides ever purchased (for history)
+        overrides_used_total: 0,        // Total overrides ever used (for history)
+        // Monthly usage tracking
+        monthly_stats: {
+          [currentMonth]: {
+            overrides_used: 0,
+            total_spent_this_month: 0
+          }
+        },
+        // Overall stats
+        total_spent: 0,
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp()
+      };
+      
+      await setDoc(doc(db, 'user_overrides', userId), initialData);
+      return initialData;
+    }
+    
+    const data = overrideDoc.data();
+    
+    // Ensure current month exists
+    if (!data.monthly_stats || !data.monthly_stats[currentMonth]) {
+      const updatedMonthlyStats = {
+        ...data.monthly_stats,
+        [currentMonth]: {
+          free_overrides_used: 0,
+          purchased_overrides_used: 0,
+          total_spent_this_month: 0
+        }
+      };
+      
+      await updateDoc(doc(db, 'user_overrides', userId), {
+        monthly_stats: updatedMonthlyStats,
+        // Ensure override fields exist
+        overrides: data.overrides || data.purchased_overrides || data.override_credits || 0,
+        total_overrides_purchased: data.total_overrides_purchased || data.credits_purchased_total || 0,
+        overrides_used_total: data.overrides_used_total || 0,
+        updated_at: serverTimestamp()
+      });
+      
+      return { 
+        ...data, 
+        monthly_stats: updatedMonthlyStats,
+        purchased_overrides: data.purchased_overrides || data.override_credits || 0,
+        overrides_used_total: data.overrides_used_total || 0
+      };
+    }
+    
+    return {
+      ...data,
+      overrides: data.overrides || data.purchased_overrides || data.override_credits || 0,
+      total_overrides_purchased: data.total_overrides_purchased || data.credits_purchased_total || 0,
+      overrides_used_total: data.overrides_used_total || 0
+    };
+  } catch (error) {
+    console.error("Error in getUserOverrideStats:", error);
+    throw error;
+  }
+};
+
+export const checkOverrideEligibility = async (userId, siteUrl = null) => {
+  try {
+    const [subscription, overrideStats] = await Promise.all([
+      getUserSubscription(userId),
+      getUserOverrideStats(userId)
+    ]);
+    
+    // If siteUrl is provided, check if the site is actually blocked and time limit exceeded
+    let siteEligibility = { canOverride: true, reason: '' };
+    if (siteUrl) {
+      siteEligibility = await checkSiteTimeEligibility(userId, siteUrl);
+      if (!siteEligibility.canOverride) {
+        return {
+          canOverride: false,
+          requiresPayment: false,
+          price: 0,
+          reason: siteEligibility.reason,
+          overridesAvailable: overrideStats.overrides || 0,
+          siteInfo: siteEligibility.siteInfo
+        };
+      }
+    }
+    
+    const userPlan = subscription?.plan || 'free';
+    const overridesAvailable = overrideStats.overrides || 0;
+    
+    // Elite plan has unlimited overrides
+    if (userPlan === 'elite') {
+      return {
+        canOverride: true,
+        requiresPayment: false,
+        price: 0,
+        reason: 'Elite plan includes unlimited overrides',
+        overridesAvailable: 999, // Unlimited display
+        userPlan,
+        siteInfo: siteEligibility.siteInfo || null
+      };
+    }
+    
+    // Check if user has any overrides available
+    if (overridesAvailable <= 0) {
+      return {
+        canOverride: true,
+        requiresPayment: true,
+        price: 1.99,
+        reason: 'No overrides available. Purchase overrides to continue.',
+        overridesAvailable: 0,
+        userPlan,
+        siteInfo: siteEligibility.siteInfo || null
+      };
+    }
+    
+    return {
+      canOverride: true,
+      requiresPayment: false,
+      price: 0,
+      reason: `Using 1 of your ${overridesAvailable} available overrides`,
+      overridesAvailable,
+      userPlan,
+      siteInfo: siteEligibility.siteInfo || null
+    };
+    
+  } catch (error) {
+    console.error("Error in checkOverrideEligibility:", error);
+    throw error;
+  }
+};
+
+// Check if a specific site is eligible for override (time limit exceeded)
+export const checkSiteTimeEligibility = async (userId, siteUrl) => {
+  try {
+    console.log(`🔍 Checking time eligibility for ${siteUrl} for user ${userId}`);
+    
+    // Get all blocked sites for the user
+    const blockedSites = await getBlockedSites(userId);
+    
+    // Find the site that matches the URL
+    const matchingSite = blockedSites.find(site => {
+      const siteHostname = site.url.replace(/^https?:\/\//, '').replace(/^www\./, '');
+      const inputHostname = siteUrl.replace(/^https?:\/\//, '').replace(/^www\./, '');
+      return siteHostname.includes(inputHostname) || inputHostname.includes(siteHostname);
+    });
+    
+    if (!matchingSite) {
+      return {
+        canOverride: false,
+        reason: `${siteUrl} is not in your blocked sites list. Please add it first.`,
+        siteInfo: null
+      };
+    }
+    
+    // Check if site is currently active (blocked)
+    if (matchingSite.is_blocked === false) {
+      return {
+        canOverride: false,
+        reason: `${matchingSite.name || siteUrl} is currently not being blocked.`,
+        siteInfo: matchingSite
+      };
+    }
+    
+    // Get today's time usage for this site
+    const today = new Date();
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const timeSpentToday = matchingSite.daily_usage?.[todayKey] || 0; // in seconds
+    const timeLimit = matchingSite.time_limit || 1800; // default 30 minutes in seconds
+    
+    const remainingTime = Math.max(0, timeLimit - timeSpentToday);
+    const remainingMinutes = Math.floor(remainingTime / 60);
+    
+    console.log(`⏱️ Site: ${matchingSite.name}, Time limit: ${timeLimit}s, Used today: ${timeSpentToday}s, Remaining: ${remainingTime}s`);
+    
+    if (remainingTime > 0) {
+      return {
+        canOverride: false,
+        reason: `You still have ${remainingMinutes} minutes remaining for ${matchingSite.name || siteUrl} today. Override is only available when time limit is exceeded.`,
+        siteInfo: {
+          ...matchingSite,
+          timeSpentToday,
+          timeLimit,
+          remainingTime,
+          remainingMinutes
+        }
+      };
+    }
+    
+    // Time limit exceeded, override is allowed
+    return {
+      canOverride: true,
+      reason: `Time limit exceeded for ${matchingSite.name || siteUrl}. Override available.`,
+      siteInfo: {
+        ...matchingSite,
+        timeSpentToday,
+        timeLimit,
+        remainingTime: 0,
+        remainingMinutes: 0
+      }
+    };
+    
+  } catch (error) {
+    console.error("Error in checkSiteTimeEligibility:", error);
+    return {
+      canOverride: false,
+      reason: 'Unable to check site eligibility. Please try again.',
+      siteInfo: null
+    };
+  }
+};
+
+export const recordOverrideUsage = async (userId, amount = 0, siteUrl = '') => {
+  try {
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    
+    const overrideStats = await getUserOverrideStats(userId);
+    const monthlyStats = overrideStats.monthly_stats?.[currentMonth] || {};
+    
+    // For Elite plan, we don't need to deduct overrides
+    const subscription = await getUserSubscription(userId);
+    const userPlan = subscription?.plan || 'free';
+    
+    let updatedData = {};
+    
+    if (userPlan === 'elite') {
+      // Elite plan: unlimited overrides, just track usage
+      updatedData = {
+        monthly_stats: {
+          ...overrideStats.monthly_stats,
+          [currentMonth]: {
+            ...monthlyStats,
+            overrides_used: (monthlyStats.overrides_used || 0) + 1,
+            total_spent_this_month: (monthlyStats.total_spent_this_month || 0) + amount
+          }
+        },
+        overrides_used_total: (overrideStats.overrides_used_total || 0) + 1,
+        total_spent: (overrideStats.total_spent || 0) + amount,
+        updated_at: serverTimestamp()
+      };
+    } else {
+      // Free/Pro plans: deduct from override balance
+      const newOverrideBalance = Math.max(0, (overrideStats.overrides || 0) - 1);
+      
+      updatedData = {
+        monthly_stats: {
+          ...overrideStats.monthly_stats,
+          [currentMonth]: {
+            ...monthlyStats,
+            overrides_used: (monthlyStats.overrides_used || 0) + 1,
+            total_spent_this_month: (monthlyStats.total_spent_this_month || 0) + amount
+          }
+        },
+        overrides: newOverrideBalance,
+        overrides_used_total: (overrideStats.overrides_used_total || 0) + 1,
+        total_spent: (overrideStats.total_spent || 0) + amount,
+        updated_at: serverTimestamp()
+      };
+    }
+    
+    // Create override history entry
+    const overrideHistoryData = {
+      user_id: userId,
+      site_url: siteUrl,
+      timestamp: serverTimestamp(),
+      amount: amount,
+      month: currentMonth,
+      plan: userPlan,
+      reason: `Override used for ${siteUrl || 'site'}`,
+      created_at: serverTimestamp()
+    };
+    
+    // Update user override stats and add history entry
+    await Promise.all([
+      updateDoc(doc(db, 'user_overrides', userId), updatedData),
+      addDoc(collection(db, 'override_history'), overrideHistoryData)
+    ]);
+    
+    return {
+      success: true,
+      newStats: {
+        ...overrideStats,
+        ...updatedData
+      }
+    };
+  } catch (error) {
+    console.error("Error in recordOverrideUsage:", error);
+    throw error;
+  }
+};
+
+export const processOverridePayment = async (userId, paymentData, siteUrl = '') => {
+  try {
+    // In a real implementation, you would process the payment with Stripe here
+    // For now, we'll simulate payment processing
+    
+    const { amount = 1.99, paymentMethod, reason = 'Site override' } = paymentData;
+    
+    console.log(`💳 Processing override payment: $${amount} for user ${userId}`);
+    
+    // Simulate payment processing delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Record the paid override usage
+    const result = await recordOverrideUsage(userId, amount, siteUrl);
+    
+    console.log(`✅ Override payment processed successfully`);
+    
+    return {
+      success: true,
+      transactionId: `ovr_${Date.now()}_${userId.substring(0, 8)}`,
+      amount,
+      message: 'Override payment processed successfully',
+      overrideStats: result.newStats
+    };
+  } catch (error) {
+    console.error("Error in processOverridePayment:", error);
+    throw error;
+  }
+};
+
+// Purchase overrides - add to existing purchased overrides
+export const purchaseOverrides = async (userId, quantity, paymentData) => {
+  try {
+    const pricePerOverride = 1.99;
+    const totalPrice = quantity * pricePerOverride;
+    
+    console.log(`💳 Processing override purchase: ${quantity} overrides for $${totalPrice}`);
+    
+    // Simulate payment processing
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    // Get current override stats
+    const overrideStats = await getUserOverrideStats(userId);
+    
+    // Update override balance
+    const newOverrideBalance = (overrideStats.overrides || 0) + quantity;
+    const newTotalPurchased = (overrideStats.total_overrides_purchased || 0) + quantity;
+    
+    await updateDoc(doc(db, 'user_overrides', userId), {
+      overrides: newOverrideBalance,
+      total_overrides_purchased: newTotalPurchased,
+      total_spent: (overrideStats.total_spent || 0) + totalPrice,
+      updated_at: serverTimestamp()
+    });
+    
+    // Create purchase history entry
+    const purchaseHistoryData = {
+      user_id: userId,
+      overrides_purchased: quantity,
+      amount_paid: totalPrice,
+      price_per_override: pricePerOverride,
+      transaction_id: `ovr_buy_${Date.now()}_${userId.substring(0, 8)}`,
+      payment_method: paymentData.paymentMethod || 'card',
+      timestamp: serverTimestamp(),
+      created_at: serverTimestamp()
+    };
+    
+    await addDoc(collection(db, 'override_purchases'), purchaseHistoryData);
+    
+    console.log(`✅ Overrides purchased successfully: ${quantity} overrides`);
+    
+    return {
+      success: true,
+      transactionId: purchaseHistoryData.transaction_id,
+      overridesAdded: quantity,
+      newOverrideBalance,
+      amount: totalPrice,
+      message: `Successfully purchased ${quantity} override${quantity > 1 ? 's' : ''}!`
+    };
+    
+  } catch (error) {
+    console.error("Error in purchaseOverrides:", error);
     throw error;
   }
 };
@@ -744,4 +1157,61 @@ const getNextMidnight = () => {
   tomorrow.setDate(tomorrow.getDate() + 1);
   tomorrow.setHours(0, 0, 0, 0);
   return tomorrow;
+};
+
+// Grant monthly free overrides based on subscription plan
+export const grantMonthlyFreeOverrides = async (userId) => {
+  try {
+    const subscription = await getUserSubscription(userId);
+    const userPlan = subscription?.plan || 'free';
+    
+    // Only Pro plan gets monthly free overrides (Elite has unlimited, Free gets none)
+    if (userPlan !== 'pro') {
+      return { success: true, message: 'No monthly overrides for this plan' };
+    }
+    
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    
+    const overrideStats = await getUserOverrideStats(userId);
+    const monthlyStats = overrideStats.monthly_stats?.[currentMonth] || {};
+    
+    // Check if monthly overrides already granted
+    if (monthlyStats.monthly_grant_given) {
+      return { success: true, message: 'Monthly overrides already granted' };
+    }
+    
+    // Grant 15 free overrides for Pro plan
+    const freeOverridesToGrant = 15;
+    const newOverrideBalance = (overrideStats.overrides || 0) + freeOverridesToGrant;
+    const newTotalOverrides = (overrideStats.total_overrides_purchased || 0) + freeOverridesToGrant;
+    
+    await updateDoc(doc(db, 'user_overrides', userId), {
+      overrides: newOverrideBalance,
+      total_overrides_purchased: newTotalOverrides, // Track free + purchased combined
+      monthly_stats: {
+        ...overrideStats.monthly_stats,
+        [currentMonth]: {
+          ...monthlyStats,
+          monthly_grant_given: true,
+          free_overrides_granted: freeOverridesToGrant,
+          grant_date: serverTimestamp()
+        }
+      },
+      updated_at: serverTimestamp()
+    });
+    
+    console.log(`✅ Granted ${freeOverridesToGrant} monthly overrides to Pro user ${userId}`);
+    
+    return {
+      success: true,
+      overridesGranted: freeOverridesToGrant,
+      newBalance: newOverrideBalance,
+      message: `Granted ${freeOverridesToGrant} monthly overrides for Pro plan`
+    };
+    
+  } catch (error) {
+    console.error('Error granting monthly free overrides:', error);
+    throw error;
+  }
 }; 

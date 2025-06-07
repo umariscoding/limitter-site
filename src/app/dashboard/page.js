@@ -9,7 +9,7 @@ import Settings from "../../components/Settings";
 import SiteManager from "../../components/SiteManager";
 import BlockedSitesModal from "../../components/BlockedSitesModal";
 import { useAuth } from "../../context/AuthContext";
-import { getUserSubscription, getDashboardData } from "../../lib/firebase";
+import { getUserSubscription, getDashboardData, getUserOverrideStats } from "../../lib/firebase";
 
 export default function Dashboard() {
   const { user, userStats, blockedSites, loading, logout, refreshUserData } = useAuth();
@@ -22,12 +22,17 @@ export default function Dashboard() {
   const [showBlockedSitesModal, setShowBlockedSitesModal] = useState(false);
   const [editingSiteData, setEditingSiteData] = useState(null);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const [showSiteSelector, setShowSiteSelector] = useState(false);
+  const [overrideStats, setOverrideStats] = useState(null);
+  const [overridePurchaseSuccess, setOverridePurchaseSuccess] = useState(false);
 
   useEffect(() => {
-    // Check for payment success from URL parameters
+    // Check for payment/purchase success from URL parameters
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const paymentParam = urlParams.get("payment");
+      const purchaseParam = urlParams.get("purchase");
+      
       if (paymentParam === "success") {
         setPaymentSuccess(true);
         // Clear the URL parameter after showing the message
@@ -44,12 +49,14 @@ export default function Dashboard() {
         if (user?.uid) {
           const fetchUpdatedData = async () => {
             try {
-              const [dashData, subData] = await Promise.all([
+              const [dashData, subData, overrideData] = await Promise.all([
                 getDashboardData(user.uid),
-                getUserSubscription(user.uid)
+                getUserSubscription(user.uid),
+                getUserOverrideStats(user.uid)
               ]);
               setDashboardData(dashData);
               setSubscription(subData);
+              setOverrideStats(overrideData);
             } catch (error) {
               console.error("Error refreshing dashboard data:", error);
             }
@@ -59,6 +66,30 @@ export default function Dashboard() {
         
         // Hide the message after 5 seconds
         setTimeout(() => setPaymentSuccess(false), 5000);
+      }
+      
+      if (purchaseParam === "overrides") {
+        setOverridePurchaseSuccess(true);
+        // Clear the URL parameter after showing the message
+        const url = new URL(window.location);
+        url.searchParams.delete("purchase");
+        window.history.replaceState({}, "", url);
+        
+        // Refresh override stats
+        if (user?.uid) {
+          const fetchUpdatedOverrides = async () => {
+            try {
+              const overrideData = await getUserOverrideStats(user.uid);
+              setOverrideStats(overrideData);
+            } catch (error) {
+              console.error("Error refreshing override data:", error);
+            }
+          };
+          fetchUpdatedOverrides();
+        }
+        
+        // Hide the message after 5 seconds
+        setTimeout(() => setOverridePurchaseSuccess(false), 5000);
       }
     }
 
@@ -75,16 +106,19 @@ export default function Dashboard() {
         try {
           console.log("📊 Loading dashboard data...");
           
-          // Fetch enhanced dashboard data and subscription in parallel
-          const [dashData, subData] = await Promise.all([
+          // Fetch enhanced dashboard data, subscription, and override stats in parallel
+          const [dashData, subData, overrideData] = await Promise.all([
             getDashboardData(user.uid),
-            getUserSubscription(user.uid)
+            getUserSubscription(user.uid),
+            getUserOverrideStats(user.uid)
           ]);
           
           console.log("📈 Dashboard data loaded:", dashData);
+          console.log("🎯 Override stats loaded:", overrideData);
           
           setDashboardData(dashData);
           setSubscription(subData);
+          setOverrideStats(overrideData);
           
         } catch (error) {
           console.error("❌ Error fetching dashboard data:", error);
@@ -163,6 +197,36 @@ export default function Dashboard() {
     return badges[plan] || badges.free;
   };
 
+  const getCurrentMonthStats = () => {
+    if (!overrideStats?.monthly_stats) return { freeOverridesRemaining: 0 };
+    
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const monthlyStats = overrideStats.monthly_stats[currentMonth];
+    
+    if (!monthlyStats) return { freeOverridesRemaining: 0 };
+    
+    // Calculate free overrides remaining based on plan
+    const plan = subscription?.plan || 'free';
+    let freeOverridesLimit = 0;
+    
+    switch (plan) {
+      case 'pro':
+        freeOverridesLimit = 15;
+        break;
+      case 'elite':
+        freeOverridesLimit = 999; // Unlimited
+        break;
+      default:
+        freeOverridesLimit = 0; // Free plan gets 0 free overrides
+    }
+    
+    const freeOverridesUsed = monthlyStats.free_overrides_used || 0;
+    const freeOverridesRemaining = Math.max(0, freeOverridesLimit - freeOverridesUsed);
+    
+    return { freeOverridesRemaining };
+  };
+
   return (
     <>
       <Navbar />
@@ -188,6 +252,23 @@ export default function Dashboard() {
                   <h3 className="text-lg font-semibold text-green-800 dark:text-green-200">Payment Successful! 🎉</h3>
                   <p className="text-green-700 dark:text-green-300">
                     Welcome to your premium plan! You now have access to all advanced features.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Override Purchase Success Message */}
+          {overridePurchaseSuccess && (
+            <div className="mb-8 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl">
+              <div className="flex items-center">
+                <svg className="w-6 h-6 text-green-600 dark:text-green-400 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <div>
+                  <h3 className="text-lg font-semibold text-green-800 dark:text-green-200">Overrides Purchased! 🎉</h3>
+                  <p className="text-green-700 dark:text-green-300">
+                    Your overrides have been added to your account and are ready to use.
                   </p>
                 </div>
               </div>
@@ -455,11 +536,75 @@ export default function Dashboard() {
                     </div>
                   </div>
                   
+                  {/* Override Overrides Section */}
+                  {overrideStats && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
+                      <div className="p-6">
+                        <div className="flex justify-between items-center mb-4">
+                          <h2 className="text-lg font-semibold">Your Overrides</h2>
+                          <Link
+                            href="/checkout?overrides=1"
+                            className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors text-sm"
+                          >
+                            Buy Overrides
+                          </Link>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                            <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">
+                              {subscription?.plan === 'elite' ? '∞' : (overrideStats.overrides || 0)}
+                            </div>
+                            <div className="text-sm text-blue-700 dark:text-blue-300">Available Now</div>
+                          </div>
+                          
+                          <div className="text-center p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                            <div className="text-2xl font-bold text-purple-900 dark:text-purple-100">
+                              {overrideStats.total_overrides_purchased || 0}
+                            </div>
+                            <div className="text-sm text-purple-700 dark:text-purple-300">Total Received</div>
+                            <div className="text-xs text-purple-600 dark:text-purple-400 mt-1">
+                              Free + Purchased
+                            </div>
+                          </div>
+                          
+                          <div className="text-center p-4 bg-gray-50 dark:bg-gray-900/20 rounded-lg">
+                            <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                              {overrideStats.overrides_used_total || 0}
+                            </div>
+                            <div className="text-sm text-gray-700 dark:text-gray-300">Total Used</div>
+                          </div>
+                        </div>
+                        
+                        {/* Plan-specific override info */}
+                        <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg text-sm">
+                          {subscription?.plan === 'free' && (
+                            <p className="text-gray-600 dark:text-gray-400">
+                              <span className="font-medium">Free Plan:</span> Purchase overrides to exceed daily limits. <Link href="/pricing" className="text-primary hover:underline">Upgrade</Link> for monthly free overrides.
+                            </p>
+                          )}
+                          {subscription?.plan === 'pro' && (
+                            <p className="text-gray-600 dark:text-gray-400">
+                              <span className="font-medium">Pro Plan:</span> 15 free overrides per month, then use purchased overrides or buy more.
+                            </p>
+                          )}
+                          {subscription?.plan === 'elite' && (
+                            <p className="text-gray-600 dark:text-gray-400">
+                              <span className="font-medium">Elite Plan:</span> Unlimited overrides included! No need to purchase overrides.
+                            </p>
+                          )}
+                        </div>
+                        
+
+                      </div>
+                    </div>
+                  )}
+
                   {/* Quick Actions */}
                   <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
                     <div className="p-6">
                       <h2 className="text-lg font-semibold mb-4">Quick Actions</h2>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                         <button 
                           onClick={handleAddSiteClick}
                           className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
@@ -502,6 +647,38 @@ export default function Dashboard() {
                             <span className="font-medium">Settings</span>
                           </div>
                           <p className="text-sm text-gray-600 dark:text-gray-400">Customize your experience</p>
+                        </button>
+                        
+                        <Link
+                          href="/checkout?overrides=1"
+                          className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left block"
+                        >
+                          <div className="flex items-center mb-2">
+                            <svg className="w-5 h-5 text-primary mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                            </svg>
+                            <span className="font-medium">Buy Overrides</span>
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">
+                            {subscription?.plan === 'elite' ? 'Unlimited overrides included' : 'Purchase overrides at $1.99 each'}
+                          </p>
+                        </Link>
+                        
+                        <button
+                          onClick={() => setShowSiteSelector(true)}
+                          className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left w-full"
+                        >
+                          <div className="flex items-center mb-2">
+                            <svg className="w-5 h-5 text-primary mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                            <span className="font-medium">Request Override</span>
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">
+                            {subscription?.plan === 'free' ? 'Pay $1.99 to override' :
+                             subscription?.plan === 'pro' ? 'Use free or paid override' :
+                             'Use unlimited override'}
+                          </p>
                         </button>
                       </div>
                     </div>
@@ -619,6 +796,61 @@ export default function Dashboard() {
         onClose={handleCloseBlockedSitesModal}
         onEditSite={handleEditSite}
       />
+
+      {/* Site Selector Modal for Override */}
+      {showSiteSelector && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Select Site to Override</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Choose which blocked site you want to request an override for:
+            </p>
+            
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {blockedSites.filter(site => site.is_blocked !== false).map((site) => (
+                <button
+                  key={site.id}
+                  onClick={() => {
+                    const siteUrl = site.url.replace(/^https?:\/\//, '');
+                    router.push(`/override?site=${encodeURIComponent(siteUrl)}&return=${encodeURIComponent(window.location.href)}`);
+                  }}
+                  className="w-full p-3 text-left border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  <div className="font-medium">{site.name}</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">{site.url}</div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    Limit: {Math.floor((site.time_limit || 1800) / 60)} minutes/day
+                  </div>
+                </button>
+              ))}
+              
+              {blockedSites.filter(site => site.is_blocked !== false).length === 0 && (
+                <p className="text-center text-gray-500 dark:text-gray-400 py-4">
+                  No active blocked sites found. Add some sites first.
+                </p>
+              )}
+            </div>
+            
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowSiteSelector(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowSiteSelector(false);
+                  handleAddSiteClick();
+                }}
+                className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+              >
+                Add New Site
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       <Footer />
     </>

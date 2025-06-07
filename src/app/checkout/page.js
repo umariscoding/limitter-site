@@ -13,6 +13,8 @@ export default function Checkout() {
   const searchParams = useSearchParams();
   
   const [selectedPlan, setSelectedPlan] = useState("");
+  const [purchaseType, setPurchaseType] = useState("plan"); // "plan" or "overrides"
+  const [overrideQuantity, setOverrideQuantity] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   
@@ -66,12 +68,21 @@ export default function Checkout() {
       return;
     }
 
-    // Get plan from URL
+    // Get purchase type and details from URL
     const planFromUrl = searchParams.get("plan");
-    if (planFromUrl && plans[planFromUrl]) {
+    const overridesFromUrl = searchParams.get("overrides");
+    
+    if (overridesFromUrl) {
+      // Override purchase
+      setPurchaseType("overrides");
+      const quantity = parseInt(overridesFromUrl) || 1;
+      setOverrideQuantity(quantity);
+    } else if (planFromUrl && plans[planFromUrl]) {
+      // Plan purchase
+      setPurchaseType("plan");
       setSelectedPlan(planFromUrl);
     } else {
-      // Redirect to pricing if no valid plan
+      // Redirect to pricing if no valid purchase type
       router.push("/pricing");
     }
 
@@ -82,6 +93,9 @@ export default function Checkout() {
   }, [user, loading, router, searchParams]);
 
   const getCurrentPrice = () => {
+    if (purchaseType === "overrides") {
+      return overrideQuantity * 1.99;
+    }
     if (!selectedPlan || !plans[selectedPlan]) return 0;
     return plans[selectedPlan].price;
   };
@@ -129,34 +143,69 @@ export default function Checkout() {
     setError("");
 
     try {
-      console.log("🔄 Processing subscription upgrade to:", selectedPlan);
-      
-      // Call our API to update the subscription
-      const response = await fetch('/api/update-subscription', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          plan: selectedPlan,
-          userId: user.uid
-        }),
-      });
+      if (purchaseType === "overrides") {
+        console.log("🔄 Processing override purchase:", overrideQuantity);
+        
+        // Call our API to purchase overrides
+        const response = await fetch('/api/purchase-overrides', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            userId: user.uid,
+            quantity: overrideQuantity,
+            paymentData: {
+              cardNumber: cardNumber.replace(/\s/g, ''),
+              expiryDate,
+              cvv,
+              nameOnCard,
+              paymentMethod: 'card'
+            }
+          }),
+        });
 
-      const data = await response.json();
+        const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update subscription');
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to purchase overrides');
+        }
+
+        console.log("✅ Overrides purchased successfully:", data);
+        
+        // Redirect to dashboard with success message
+        router.push("/dashboard?purchase=overrides");
+        
+      } else {
+        console.log("🔄 Processing subscription upgrade to:", selectedPlan);
+        
+        // Call our API to update the subscription
+        const response = await fetch('/api/update-subscription', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            plan: selectedPlan,
+            userId: user.uid
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to update subscription');
+        }
+
+        console.log("✅ Subscription updated successfully:", data);
+        
+        // Redirect to dashboard with success message
+        router.push("/dashboard?payment=success");
       }
-
-      console.log("✅ Subscription updated successfully:", data);
-      
-      // Redirect to dashboard with success message
-      router.push("/dashboard?payment=success");
       
     } catch (err) {
-      console.error("❌ Subscription update failed:", err);
-      setError(err.message || "Failed to update subscription. Please try again.");
+      console.error("❌ Purchase failed:", err);
+      setError(err.message || "Failed to complete purchase. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -178,12 +227,12 @@ export default function Checkout() {
     );
   }
 
-  // If no user or invalid plan, show nothing (redirect will happen)
-  if (!user || !selectedPlan || !plans[selectedPlan]) {
+  // If no user or invalid purchase, show nothing (redirect will happen)
+  if (!user || (purchaseType === "plan" && (!selectedPlan || !plans[selectedPlan]))) {
     return null;
   }
 
-  const plan = plans[selectedPlan];
+  const plan = purchaseType === "plan" ? plans[selectedPlan] : null;
   const currentPrice = getCurrentPrice();
 
   return (
@@ -196,7 +245,11 @@ export default function Checkout() {
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold mb-2">Complete Your Purchase</h1>
             <p className="text-gray-600 dark:text-gray-400">
-              You're upgrading to <span className="font-semibold text-primary">{plan.name}</span>
+              {purchaseType === "overrides" ? (
+                <>You're purchasing <span className="font-semibold text-primary">{overrideQuantity} override{overrideQuantity > 1 ? 's' : ''}</span></>
+              ) : (
+                <>You're upgrading to <span className="font-semibold text-primary">{plan.name}</span></>
+              )}
             </p>
           </div>
 
@@ -205,34 +258,72 @@ export default function Checkout() {
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6">
               <h2 className="text-xl font-semibold mb-6">Order Summary</h2>
               
-              {/* Plan Details */}
+              {/* Purchase Details */}
               <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 mb-6">
                 <div className="flex justify-between items-start mb-4">
                   <div>
-                    <h3 className="font-semibold text-lg">{plan.name} Plan</h3>
+                    <h3 className="font-semibold text-lg">
+                      {purchaseType === "overrides" ? "Override Purchase" : `${plan.name} Plan`}
+                    </h3>
+                    {purchaseType === "overrides" && (
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                        {overrideQuantity} override{overrideQuantity > 1 ? 's' : ''} at $1.99 each
+                      </p>
+                    )}
                   </div>
                   <div className="text-right">
                     <div className="text-2xl font-bold">
                       ${currentPrice}
-                      <span className="text-sm text-gray-600 dark:text-gray-400">/month</span>
+                      {purchaseType === "plan" && (
+                        <span className="text-sm text-gray-600 dark:text-gray-400">/month</span>
+                      )}
                     </div>
                   </div>
                 </div>
                 
-                {/* Features */}
-                <div>
-                  <h4 className="font-medium mb-3">What's included:</h4>
-                  <ul className="space-y-2">
-                    {plan.features.map((feature, index) => (
-                      <li key={index} className="flex items-center text-sm">
+                {/* Features for Plans */}
+                {purchaseType === "plan" && plan && (
+                  <div>
+                    <h4 className="font-medium mb-3">What's included:</h4>
+                    <ul className="space-y-2">
+                      {plan.features.map((feature, index) => (
+                        <li key={index} className="flex items-center text-sm">
+                          <svg className="w-4 h-4 text-green-500 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          {feature}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Override Details */}
+                {purchaseType === "overrides" && (
+                  <div>
+                    <h4 className="font-medium mb-3">Override Details:</h4>
+                    <ul className="space-y-2">
+                      <li className="flex items-center text-sm">
                         <svg className="w-4 h-4 text-green-500 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
-                        {feature}
+                        {overrideQuantity} override{overrideQuantity > 1 ? 's' : ''} added to your account
                       </li>
-                    ))}
-                  </ul>
-                </div>
+                      <li className="flex items-center text-sm">
+                        <svg className="w-4 h-4 text-green-500 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Use to bypass daily time limits
+                      </li>
+                      <li className="flex items-center text-sm">
+                        <svg className="w-4 h-4 text-green-500 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Never expire - use when needed
+                      </li>
+                    </ul>
+                  </div>
+                )}
               </div>
 
               {/* Total */}
@@ -242,7 +333,7 @@ export default function Checkout() {
                   <span className="text-2xl font-bold">${currentPrice}</span>
                 </div>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                  Charged monthly
+                  {purchaseType === "overrides" ? "One-time purchase" : "Charged monthly"}
                 </p>
               </div>
             </div>
@@ -258,6 +349,48 @@ export default function Checkout() {
               )}
 
               <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Override Quantity Selector */}
+                {purchaseType === "overrides" && (
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Number of Overrides</label>
+                    <div className="flex items-center gap-4">
+                      <div className="flex-1">
+                        <input
+                          type="number"
+                          min="1"
+                          max="100"
+                          value={overrideQuantity}
+                          onChange={(e) => setOverrideQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-700"
+                        />
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        $1.99 each = <span className="font-medium">${(overrideQuantity * 1.99).toFixed(2)} total</span>
+                      </div>
+                    </div>
+                    <div className="mt-2 flex gap-2">
+                      <span className="text-xs text-gray-600 dark:text-gray-400">Quick select:</span>
+                      {[1, 5, 10, 20].map(qty => (
+                        <button
+                          key={qty}
+                          type="button"
+                          onClick={() => setOverrideQuantity(qty)}
+                          className={`px-2 py-1 text-xs rounded ${
+                            overrideQuantity === qty 
+                              ? 'bg-primary text-white' 
+                              : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                          }`}
+                        >
+                          {qty}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Overrides never expire and can be used to bypass time limits when needed.
+                    </p>
+                  </div>
+                )}
+
                 {/* Email */}
                 <div>
                   <label className="block text-sm font-medium mb-1">Email</label>
@@ -391,7 +524,12 @@ export default function Checkout() {
                   disabled={isLoading}
                   className="w-full py-3 px-4 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50 font-medium"
                 >
-                  {isLoading ? "Upgrading Plan..." : `Upgrade to ${plan.name} - $${currentPrice}/month`}
+                  {isLoading ? 
+                    (purchaseType === "overrides" ? "Processing Purchase..." : "Upgrading Plan...") : 
+                    (purchaseType === "overrides" ? 
+                      `Purchase ${overrideQuantity} Override${overrideQuantity > 1 ? 's' : ''} - $${currentPrice}` : 
+                      `Upgrade to ${plan.name} - $${currentPrice}/month`)
+                  }
                 </button>
 
                 {/* Security Notice */}
