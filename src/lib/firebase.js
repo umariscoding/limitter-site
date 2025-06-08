@@ -284,9 +284,7 @@ export const updateBlockedSite = async (siteId, siteData) => {
   try {
     // Convert camelCase to snake_case for consistency with database schema
     const updateData = {
-      name: siteData.name,
-      url: siteData.url,
-      time_limit: siteData.timeLimit, // Convert timeLimit -> time_limit
+      ...siteData,
       is_active: siteData.isActive,
       updated_at: serverTimestamp(),
     };
