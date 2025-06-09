@@ -4,10 +4,13 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { useAuth } from "../context/AuthContext";
+import { checkAdminStatus } from "../lib/firebase";
 
 export default function Navbar({ onNavigate }) {
   const { user, logout, loading } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminLoading, setAdminLoading] = useState(true);
   const router = useRouter();
 
   // Debug logging for user state changes
@@ -15,6 +18,27 @@ export default function Navbar({ onNavigate }) {
     console.log("🧭 Navbar: User state changed:", user);
     console.log("🧭 Navbar: Loading state:", loading);
   }, [user, loading]);
+
+  // Check admin status when user changes
+  useEffect(() => {
+    const verifyAdmin = async () => {
+      if (user) {
+        try {
+          const adminStatus = await checkAdminStatus(user.uid);
+          setIsAdmin(adminStatus);
+          console.log("🛠️ Navbar: Admin status:", adminStatus);
+        } catch (error) {
+          console.error("❌ Navbar: Error checking admin status:", error);
+          setIsAdmin(false);
+        }
+      } else {
+        setIsAdmin(false);
+      }
+      setAdminLoading(false);
+    };
+
+    verifyAdmin();
+  }, [user]);
 
   const handleNavigation = (section) => {
     console.log("🚀 Navbar: Navigation clicked:", section);
@@ -33,6 +57,12 @@ export default function Navbar({ onNavigate }) {
       } else if (section === 'dashboard') {
         console.log("📊 Navigating to dashboard");
         router.push('/dashboard');
+      } else if (section === 'admin') {
+        console.log("🛠️ Navigating to admin panel");
+        router.push('/admin');
+      } else if (section === 'analytics') {
+        console.log("📈 Navigating to analytics");
+        router.push('/analytics');
       } else if (section === 'login') {
         console.log("🔐 Navigating to login");
         router.push('/login');
@@ -113,6 +143,21 @@ export default function Navbar({ onNavigate }) {
               >
                 Dashboard
               </button>
+
+              {/* Admin Panel Button - Only show for admin users */}
+              {isAdmin && !adminLoading && (
+                <button
+                  onClick={() => {
+                    console.log("🛠️ Admin Panel button clicked!");
+                    handleNavigation('admin');
+                  }}
+                  className="text-red-600 hover:text-red-700 transition-colors font-medium"
+                  title="Admin Panel"
+                >
+                  🛠️ Admin
+                </button>
+              )}
+
               <button
                 onClick={handleLogout}
                 className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-light transition-colors"
@@ -183,6 +228,20 @@ export default function Navbar({ onNavigate }) {
                 >
                   Dashboard
                 </button>
+
+                {/* Admin Panel Button - Mobile */}
+                {isAdmin && !adminLoading && (
+                  <button
+                    onClick={() => {
+                      console.log("🛠️ Mobile Admin Panel button clicked!");
+                      handleNavigation('admin');
+                    }}
+                    className="text-red-600 hover:text-red-700 transition-colors py-2 text-left font-medium"
+                  >
+                    🛠️ Admin Panel
+                  </button>
+                )}
+
                 <button
                   onClick={handleLogout}
                   className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-light transition-colors text-center"

@@ -6,6 +6,7 @@ import Link from "next/link";
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
 import Settings from "../../components/Settings";
+import Analytics from "../../components/Analytics";
 import SiteManager from "../../components/SiteManager";
 import BlockedSitesModal from "../../components/BlockedSitesModal";
 import { useAuth } from "../../context/AuthContext";
@@ -18,11 +19,11 @@ export default function Dashboard() {
   const [dashboardData, setDashboardData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
   const [showSiteManager, setShowSiteManager] = useState(false);
   const [showBlockedSitesModal, setShowBlockedSitesModal] = useState(false);
   const [editingSiteData, setEditingSiteData] = useState(null);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
-  const [showSiteSelector, setShowSiteSelector] = useState(false);
   const [overrideStats, setOverrideStats] = useState(null);
   const [overridePurchaseSuccess, setOverridePurchaseSuccess] = useState(false);
 
@@ -141,6 +142,14 @@ export default function Dashboard() {
 
   const handleBackFromSettings = () => {
     setShowSettings(false);
+  };
+
+  const handleAnalyticsClick = () => {
+    setShowAnalytics(true);
+  };
+
+  const handleBackFromAnalytics = () => {
+    setShowAnalytics(false);
   };
 
   const handleAddSiteClick = () => {
@@ -427,6 +436,16 @@ export default function Dashboard() {
             <div className="lg:col-span-2 space-y-6">
               {showSettings ? (
                 <Settings onBack={handleBackFromSettings} />
+              ) : showAnalytics ? (
+                <Analytics 
+                  onBack={handleBackFromAnalytics}
+                  user={user}
+                  subscription={subscription}
+                  blockedSites={blockedSites}
+                  overrideStats={overrideStats}
+                  dashboardData={dashboardData}
+                  userStats={userStats}
+                />
               ) : (
                 <>
                   {/* Subscription Card */}
@@ -600,6 +619,8 @@ export default function Dashboard() {
                     </div>
                   )}
 
+
+
                   {/* Quick Actions */}
                   <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
                     <div className="p-6">
@@ -634,7 +655,8 @@ export default function Dashboard() {
                         </button>
                         
 
-                        
+
+
                         <button 
                           onClick={handleSettingsClick}
                           className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
@@ -647,6 +669,19 @@ export default function Dashboard() {
                             <span className="font-medium">Settings</span>
                           </div>
                           <p className="text-sm text-gray-600 dark:text-gray-400">Customize your experience</p>
+                        </button>
+
+                        <button 
+                          onClick={handleAnalyticsClick}
+                          className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
+                        >
+                          <div className="flex items-center mb-2">
+                            <svg className="w-5 h-5 text-primary mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                            </svg>
+                            <span className="font-medium">Analytics</span>
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">View insights & usage data</p>
                         </button>
                         
                         <Link
@@ -664,22 +699,7 @@ export default function Dashboard() {
                           </p>
                         </Link>
                         
-                        <button
-                          onClick={() => setShowSiteSelector(true)}
-                          className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left w-full"
-                        >
-                          <div className="flex items-center mb-2">
-                            <svg className="w-5 h-5 text-primary mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                            </svg>
-                            <span className="font-medium">Request Override</span>
-                          </div>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">
-                            {subscription?.plan === 'free' ? 'Pay $1.99 to override' :
-                             subscription?.plan === 'pro' ? 'Use free or paid override' :
-                             'Use unlimited override'}
-                          </p>
-                        </button>
+
                       </div>
                     </div>
                   </div>
@@ -797,60 +817,7 @@ export default function Dashboard() {
         onEditSite={handleEditSite}
       />
 
-      {/* Site Selector Modal for Override */}
-      {showSiteSelector && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-4">Select Site to Override</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              Choose which blocked site you want to request an override for:
-            </p>
-            
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {blockedSites.filter(site => site.is_blocked !== false).map((site) => (
-                <button
-                  key={site.id}
-                  onClick={() => {
-                    const siteUrl = site.url.replace(/^https?:\/\//, '');
-                    router.push(`/override?site=${encodeURIComponent(siteUrl)}&return=${encodeURIComponent(window.location.href)}`);
-                  }}
-                  className="w-full p-3 text-left border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                >
-                  <div className="font-medium">{site.name}</div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">{site.url}</div>
-                  <div className="text-xs text-gray-400 mt-1">
-                    Limit: {Math.floor((site.time_limit || 1800) / 60)} minutes/day
-                  </div>
-                </button>
-              ))}
-              
-              {blockedSites.filter(site => site.is_blocked !== false).length === 0 && (
-                <p className="text-center text-gray-500 dark:text-gray-400 py-4">
-                  No active blocked sites found. Add some sites first.
-                </p>
-              )}
-            </div>
-            
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => setShowSiteSelector(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setShowSiteSelector(false);
-                  handleAddSiteClick();
-                }}
-                className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
-              >
-                Add New Site
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
       
       <Footer />
     </>

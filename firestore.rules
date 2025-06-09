@@ -1,9 +1,36 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // TEMPORARY TEST MODE - ALLOWS ALL ACCESS
-    // ⚠️ WARNING: This is for development only!
-    // Switch to firestore.rules for production
-    allow read, write: if true;
+    
+    // Users collection
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Blocked sites collection with new schema
+    // Document ID format: {user_id}_{normalized_domain}
+    match /blocked_sites/{siteId} {
+      allow read, write: if request.auth != null 
+        && siteId.matches('^' + request.auth.uid + '_.*');
+      
+      // Alternative rule that also checks the user_id field for extra security
+      allow read, write: if request.auth != null 
+        && request.auth.uid == resource.data.user_id;
+    }
+    
+    // Subscriptions collection
+    match /subscriptions/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // User overrides collection
+    match /user_overrides/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Default deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
   }
 } 

@@ -17,6 +17,10 @@ import {
   removeBlockedSite,
   getUserSubscription,
   createSubscription,
+  checkIfUserNeedsMigration,
+  migrateBlockedSitesToNewSchema,
+  getUserAnalytics,
+  exportAnalyticsData,
 } from '../lib/firebase';
 
 const AuthContext = createContext();
@@ -88,6 +92,19 @@ export function AuthProvider({ children }) {
 
       // Load user's blocked sites and calculate stats
       try {
+        // Check if user needs migration to new schema
+        const needsMigration = await checkIfUserNeedsMigration(firebaseUser.uid);
+        if (needsMigration) {
+          console.log("🔄 User needs schema migration, starting migration...");
+          try {
+            const migrationResult = await migrateBlockedSitesToNewSchema(firebaseUser.uid);
+            console.log("✅ Migration completed:", migrationResult);
+          } catch (migrationError) {
+            console.error("❌ Migration failed:", migrationError);
+            // Continue loading even if migration fails
+          }
+        }
+        
         const sites = await getBlockedSites(firebaseUser.uid);
         setBlockedSites(sites);
         
@@ -302,12 +319,17 @@ export function AuthProvider({ children }) {
       }
 
       console.log("🚫 Adding blocked site...");
-      const newSite = await addBlockedSite(user.uid, siteData);
+      const result = await addBlockedSite(user.uid, siteData);
       
       // Refresh blocked sites and stats
       await refreshUserData();
       
-      return { success: true, site: newSite };
+      return { 
+        success: true, 
+        site: result,
+        message: result.message,
+        wasReactivated: result.wasReactivated
+      };
     } catch (error) {
       console.error("❌ Error adding blocked site:", error);
       return { success: false, error: error.message };

@@ -125,7 +125,9 @@ export default function SiteManager({ isOpen, onClose, editingSiteData = null })
         // For new sites, let Firebase handle timestamps
         const result = await addSite(baseSiteData);
         if (result.success) {
-          showMessage('success', 'Site added successfully!');
+          // Use the message from the server (handles reactivation case)
+          const messageType = result.wasReactivated ? 'info' : 'success';
+          showMessage(messageType, result.message || 'Site added successfully!');
           setTimeout(() => {
             resetForm();
             onClose();
@@ -167,6 +169,8 @@ export default function SiteManager({ isOpen, onClose, editingSiteData = null })
             <div className={`mt-4 p-3 rounded-lg text-sm ${
               message.type === 'success' 
                 ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800' 
+                : message.type === 'info'
+                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800'
                 : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800'
             }`}>
               {message.text}
