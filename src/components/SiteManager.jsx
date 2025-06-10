@@ -83,11 +83,13 @@ export default function SiteManager({ isOpen, onClose, editingSiteData = null })
       return false;
     }
 
-    // Time limit validation
-    const totalMinutes = (formData.hours * 60) + formData.minutes;
-    if (totalMinutes < 1 || totalMinutes > 1440) {
-      showMessage('error', 'Time limit must be between 1 minute and 24 hours');
-      return false;
+    // Time limit validation (only for new sites)
+    if (!editingSite) {
+      const totalMinutes = (formData.hours * 60) + formData.minutes;
+      if (totalMinutes < 1 || totalMinutes > 1440) {
+        showMessage('error', 'Time limit must be between 1 minute and 24 hours');
+        return false;
+      }
     }
 
     return true;
@@ -102,16 +104,16 @@ export default function SiteManager({ isOpen, onClose, editingSiteData = null })
       // Convert hours and minutes to total seconds
       const totalSeconds = (formData.hours * 3600) + (formData.minutes * 60);
       
-      const baseSiteData = {
-        name: formData.name,
-        url: formData.url.startsWith('http') ? formData.url : `https://${formData.url}`,
-        timeLimit: totalSeconds, // Store in seconds
-        isActive: true
-      };
-
       if (editingSite) {
-        // For updates, don't include createdAt - Firebase will handle updatedAt
-        const result = await updateSite(editingSite.id, baseSiteData);
+        // For existing sites, don't allow time limit changes - only name/url updates
+        const updateData = {
+          name: formData.name,
+          url: formData.url.startsWith('http') ? formData.url : `https://${formData.url}`,
+          isActive: true
+          // Intentionally NOT including timeLimit for existing sites
+        };
+        
+        const result = await updateSite(editingSite.id, updateData);
         if (result.success) {
           showMessage('success', 'Site updated successfully!');
           setTimeout(() => {
@@ -122,8 +124,15 @@ export default function SiteManager({ isOpen, onClose, editingSiteData = null })
           showMessage('error', result.error || 'Failed to update site');
         }
       } else {
-        // For new sites, let Firebase handle timestamps
-        const result = await addSite(baseSiteData);
+        // For new sites, include time limit and let Firebase handle timestamps
+        const newSiteData = {
+          name: formData.name,
+          url: formData.url.startsWith('http') ? formData.url : `https://${formData.url}`,
+          timeLimit: totalSeconds, // Store in seconds
+          isActive: true
+        };
+        
+        const result = await addSite(newSiteData);
         if (result.success) {
           // Use the message from the server (handles reactivation case)
           const messageType = result.wasReactivated ? 'info' : 'success';
@@ -223,43 +232,63 @@ export default function SiteManager({ isOpen, onClose, editingSiteData = null })
 
               <div>
                 <label className="block text-sm font-medium mb-2">Daily Time Limit</label>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Hours</label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        min="0"
-                        max="24"
-                        value={formData.hours}
-                        onChange={(e) => setFormData(prev => ({ ...prev, hours: parseInt(e.target.value) || 0 }))}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent"
-                      />
-                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                        <span className="text-gray-500 dark:text-gray-400 text-sm">h</span>
+                {editingSite ? (
+                  // For existing sites, show time limit as read-only
+                  <div className="bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                      </svg>
+                      <span className="font-medium text-gray-900 dark:text-white">
+                        {formData.hours}h {formData.minutes}m per day
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      ⚠️ Time limits cannot be changed after creating a site. Contact an admin if you need this changed.
+                    </p>
+                  </div>
+                ) : (
+                  // For new sites, allow time limit selection
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Hours</label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            min="0"
+                            max="24"
+                            value={formData.hours}
+                            onChange={(e) => setFormData(prev => ({ ...prev, hours: parseInt(e.target.value) || 0 }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent"
+                          />
+                          <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                            <span className="text-gray-500 dark:text-gray-400 text-sm">h</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Minutes</label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            min="0"
+                            max="59"
+                            value={formData.minutes}
+                            onChange={(e) => setFormData(prev => ({ ...prev, minutes: parseInt(e.target.value) || 0 }))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent"
+                          />
+                          <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                            <span className="text-gray-500 dark:text-gray-400 text-sm">m</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Minutes</label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        min="0"
-                        max="59"
-                        value={formData.minutes}
-                        onChange={(e) => setFormData(prev => ({ ...prev, minutes: parseInt(e.target.value) || 0 }))}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent"
-                      />
-                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                        <span className="text-gray-500 dark:text-gray-400 text-sm">m</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Maximum: 24 hours per day. Minimum: 1 minute total.
-                </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Maximum: 24 hours per day. Minimum: 1 minute total.
+                    </p>
+                  </>
+                )}
               </div>
             </div>
 

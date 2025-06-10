@@ -508,6 +508,8 @@ export const getUserSubscription = async (userId) => {
 
 export const createSubscription = async (userId, plan) => {
   try {
+    console.log(`📝 Creating subscription for user ${userId} with plan: ${plan}`);
+    
     const subscriptionDoc = {
       user_id: userId,
       plan: plan,
@@ -520,17 +522,7 @@ export const createSubscription = async (userId, plan) => {
 
     await setDoc(doc(db, 'subscriptions', userId), subscriptionDoc);
     
-    // Grant monthly overrides if creating Pro plan subscription
-    if (plan === 'pro') {
-      try {
-        await grantMonthlyFreeOverrides(userId);
-        console.log("✅ Monthly overrides granted for new Pro subscriber");
-      } catch (error) {
-        console.error("⚠️ Error granting monthly overrides:", error);
-        // Don't fail the subscription creation if override grant fails
-      }
-    }
-    
+    console.log(`✅ Subscription document created for user ${userId}`);
     return { id: userId, ...subscriptionDoc };
   } catch (error) {
     console.error("Error in createSubscription:", error);
@@ -540,6 +532,12 @@ export const createSubscription = async (userId, plan) => {
 
 export const updateUserSubscription = async (userId, plan) => {
   try {
+    console.log(`🔄 Updating subscription for user ${userId} to ${plan} plan`);
+    
+    // Get current plan for comparison
+    const currentUser = await getUserProfile(userId);
+    const previousPlan = currentUser?.plan || 'free';
+    
     // First check if subscription exists
     const existingSubscription = await getUserSubscription(userId);
     
@@ -554,21 +552,87 @@ export const updateUserSubscription = async (userId, plan) => {
       
       await updateDoc(doc(db, 'subscriptions', userId), updateData);
       
-      // Grant monthly overrides if upgrading to Pro plan
-      if (plan === 'pro') {
-        try {
-          await grantMonthlyFreeOverrides(userId);
-          console.log("✅ Monthly overrides granted for new Pro subscriber");
-        } catch (error) {
-          console.error("⚠️ Error granting monthly overrides:", error);
-          // Don't fail the subscription update if override grant fails
-        }
-      }
+      // Update user profile with new plan
+      await updateDoc(doc(db, 'users', userId), {
+        plan: plan,
+        updated_at: serverTimestamp(),
+      });
       
+      // Grant full plan benefits (like buying the package)
+      await grantPlanBenefits(userId, plan, previousPlan, "Website plan upgrade");
+      
+      // Log activity for user about plan change
+      const planNames = { 
+        free: 'Free', 
+        pro: 'Pro', 
+        elite: 'Elite' 
+      };
+      
+      const benefitsText = plan === 'elite' 
+        ? 'unlimited overrides'
+        : plan === 'pro' 
+          ? '15 free overrides/month'
+          : 'basic features';
+      
+      await addUserActivity(userId, {
+        type: 'plan_upgrade',
+        description: `Plan upgraded to ${planNames[plan]} (${benefitsText})`,
+        icon: '💎',
+        color: 'purple',
+        data: {
+          previousPlan,
+          newPlan: plan,
+          upgradedBy: 'user',
+          upgradeSource: 'website',
+          benefits: benefitsText
+        }
+      });
+      
+      console.log("✅ Subscription updated successfully with full plan benefits granted");
       return { id: userId, ...existingSubscription, ...updateData };
     } else {
       // Create new subscription if doesn't exist
-      return await createSubscription(userId, plan);
+      console.log(`📝 Creating new subscription for user ${userId}`);
+      const newSubscription = await createSubscription(userId, plan);
+      
+      // Update user profile with new plan
+      await updateDoc(doc(db, 'users', userId), {
+        plan: plan,
+        updated_at: serverTimestamp(),
+      });
+      
+      // Grant full plan benefits for new subscription
+      await grantPlanBenefits(userId, plan, previousPlan, "New plan subscription");
+      
+      // Log activity for user about plan change
+      const planNames = { 
+        free: 'Free', 
+        pro: 'Pro', 
+        elite: 'Elite' 
+      };
+      
+      const benefitsText = plan === 'elite' 
+        ? 'unlimited overrides'
+        : plan === 'pro' 
+          ? '15 free overrides/month'
+          : 'basic features';
+      
+      await addUserActivity(userId, {
+        type: 'plan_subscription',
+        description: `Subscribed to ${planNames[plan]} plan (${benefitsText})`,
+        icon: '🎉',
+        color: 'green',
+        data: {
+          previousPlan,
+          newPlan: plan,
+          upgradedBy: 'user',
+          upgradeSource: 'website',
+          benefits: benefitsText
+        }
+      });
+      
+      console.log("✅ New subscription created successfully with full plan benefits granted");
+      return newSubscription;
     }
   } catch (error) {
     console.error("Error in updateUserSubscription:", error);
