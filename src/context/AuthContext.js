@@ -411,8 +411,8 @@ export function AuthProvider({ children }) {
       setBlockedSites(sites);
       
       // Recalculate stats
-      const totalSites = sites.length;
-      const activeSites = sites.filter(site => site.is_blocked).length;
+      const totalSites = sites.length; // All returned sites are active (getBlockedSites filters for is_active == true)
+      const activeSites = sites.length; // Same as totalSites since we only get active tracking sites
       const totalTimeSpent = sites.reduce((sum, site) => sum + (site.total_time_spent || 0), 0);
       const todayTimeSpent = sites.reduce((sum, site) => sum + (site.time_spent_today || 0), 0);
       

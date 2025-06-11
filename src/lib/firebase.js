@@ -271,7 +271,7 @@ export const addBlockedSite = async (userId, siteData) => {
         
         await updateDoc(doc(db, 'blocked_sites', documentId), updateData);
         
-        // Update user's total blocked sites count
+        // Update user's total blocked sites count (stored count for reference)
         await updateUserBlockedSitesCount(userId);
         
         return { 
@@ -330,7 +330,7 @@ export const addBlockedSite = async (userId, siteData) => {
 
     await setDoc(doc(db, 'blocked_sites', documentId), siteDoc);
     
-    // Update user's total blocked sites count
+    // Update user's total blocked sites count (stored count for reference)
     await updateUserBlockedSitesCount(userId);
     
     return { 
@@ -790,9 +790,10 @@ export const getUserStatistics = async (userId) => {
     ]);
 
     // Calculate comprehensive stats
-    const totalSites = userProfile.total_sites_blocked;
-    const activeSites = blockedSites.filter(site => site.is_blocked !== false).length;
-    const inactiveSites = blockedSites.filter(site => site.is_blocked === false).length;
+    const totalSites = blockedSites.length; // Live count of active tracking sites
+    const activeSites = blockedSites.length; // All returned sites are active (getBlockedSites filters for is_active == true)
+    const currentlyBlockedSites = blockedSites.filter(site => site.is_blocked === true).length;
+    const currentlyUnblockedSites = blockedSites.filter(site => site.is_blocked !== true).length;
     
     // Time calculations
     const totalTimeSpent = blockedSites.reduce((sum, site) => sum + (site.total_time_spent || 0), 0);
@@ -814,9 +815,10 @@ export const getUserStatistics = async (userId) => {
 
     const stats = {
       // Core stats
-      totalSitesBlocked: totalSites,
-      activeSitesBlocked: activeSites,
-      inactiveSitesBlocked: inactiveSites,
+      totalSitesBlocked: totalSites, // Total active tracking sites
+      activeSitesBlocked: activeSites, // Same as total (all returned sites are active)
+      currentlyBlockedSites: currentlyBlockedSites, // Sites currently blocked due to time limit
+      currentlyUnblockedSites: currentlyUnblockedSites, // Sites not currently blocked
       
       // Time stats (in minutes)
       totalTimeSpent: totalTimeSpent,
@@ -847,7 +849,8 @@ export const getUserStatistics = async (userId) => {
     return {
       totalSitesBlocked: 0,
       activeSitesBlocked: 0,
-      inactiveSitesBlocked: 0,
+      currentlyBlockedSites: 0,
+      currentlyUnblockedSites: 0,
       totalTimeSpent: 0,
       todayTimeSpent: 0,
       totalTimeSaved: 0,
@@ -875,10 +878,10 @@ export const getDashboardData = async (userId) => {
     ]);
     
     console.log("User Profile in getDashboardData:", userProfile);
-    // Calculate stats locally
-    const totalSites = userProfile.total_sites_blocked;
+    // Calculate stats locally - use actual active sites count (not stored count which may be stale)
+    const totalSites = blockedSites.length; // Live count of active tracking sites
     console.log(blockedSites, "\nFrom getDashboardData")
-    const activeSites = blockedSites.filter(site => site.is_blocked !== false).length;
+    const activeSites = blockedSites.length; // All returned sites are active (getBlockedSites filters for is_active == true)
     const totalTimeSpent = blockedSites.reduce((sum, site) => sum + (site.total_time_spent || 0), 0);
     const todayTimeSpent = blockedSites.reduce((sum, site) => sum + (site.time_spent_today || 0), 0);
     const totalTimeSaved = userProfile?.total_time_saved || 0;
@@ -889,7 +892,8 @@ export const getDashboardData = async (userId) => {
       id: site.id,
       name: site.name || site.url,
       url: site.url,
-      isActive: site.is_blocked !== false,
+      isActive: site.is_active !== false, // Use is_active field for tracking status
+      isCurrentlyBlocked: site.is_blocked === true, // Separate field for current block status
       timeLimit: site.time_limit || 30,
       timeSpent: site.total_time_spent || 0,
       lastAccessed: site.last_accessed
