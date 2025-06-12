@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { 
   auth,
@@ -8,29 +8,35 @@ import {
   logIn as firebaseLogIn,
   logOut as firebaseLogOut,
   getCurrentUser,
-  getUserProfile, 
   createUserProfile, 
   updateUserProfile,
-  addBlockedSite,
-  getBlockedSites,
-  updateBlockedSite,
-  removeBlockedSite,
+  getUserProfile,
   getUserSubscription,
   createSubscription,
-  checkIfUserNeedsMigration,
-  migrateBlockedSitesToNewSchema,
-  getUserAnalytics,
-  exportAnalyticsData,
+  updateSubscription,
+  updateUserAnalytics,
+  exportAnalyticsData
 } from '../lib/firebase';
+import { 
+  addBlockedSite, 
+  updateBlockedSite, 
+  removeBlockedSite, 
+  getBlockedSites 
+} from '../lib/realtimeDb';
 
 const AuthContext = createContext();
+
+export function useAuth() {
+  return useContext(AuthContext);
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [userProfile, setUserProfile] = useState(null);
+  const [subscription, setSubscription] = useState(null);
   const [userStats, setUserStats] = useState(null);
   const [blockedSites, setBlockedSites] = useState([]);
-  const authStatePromiseResolvers = useRef([]);
 
   useEffect(() => {
     // Listen for auth changes
@@ -45,9 +51,6 @@ export function AuthProvider({ children }) {
         setUserStats(null);
         setBlockedSites([]);
         setLoading(false);
-        
-        authStatePromiseResolvers.current.forEach(resolve => resolve(null));
-        authStatePromiseResolvers.current = [];
       }
     });
 
@@ -92,19 +95,6 @@ export function AuthProvider({ children }) {
 
       // Load user's blocked sites and calculate stats
       try {
-        // Check if user needs migration to new schema
-        const needsMigration = await checkIfUserNeedsMigration(firebaseUser.uid);
-        if (needsMigration) {
-          console.log("🔄 User needs schema migration, starting migration...");
-          try {
-            const migrationResult = await migrateBlockedSitesToNewSchema(firebaseUser.uid);
-            console.log("✅ Migration completed:", migrationResult);
-          } catch (migrationError) {
-            console.error("❌ Migration failed:", migrationError);
-            // Continue loading even if migration fails
-          }
-        }
-        
         const sites = await getBlockedSites(firebaseUser.uid);
         setBlockedSites(sites);
         
@@ -127,10 +117,6 @@ export function AuthProvider({ children }) {
       } catch (error) {
         console.error("❌ Error loading user data:", error);
       }
-      
-      // Resolve any pending auth state promises
-      authStatePromiseResolvers.current.forEach(resolve => resolve(newUser));
-      authStatePromiseResolvers.current = [];
     } catch (error) {
       console.error("❌ Error getting user profile:", error);
       
@@ -151,10 +137,6 @@ export function AuthProvider({ children }) {
       };
       console.log("⚠️ Setting fallback user state to:", fallbackUser);
       setUser(fallbackUser);
-      
-      // Resolve any pending auth state promises with fallback user
-      authStatePromiseResolvers.current.forEach(resolve => resolve(fallbackUser));
-      authStatePromiseResolvers.current = [];
     }
     
     setLoading(false);
@@ -171,10 +153,6 @@ export function AuthProvider({ children }) {
 
       // Set up timeout
       const timeoutId = setTimeout(() => {
-        // Remove this resolver from the array
-        authStatePromiseResolvers.current = authStatePromiseResolvers.current.filter(
-          r => r !== resolverWithTimeout
-        );
         reject(new Error('Auth state change timeout'));
       }, timeout);
 
@@ -318,7 +296,7 @@ export function AuthProvider({ children }) {
         throw new Error('No authenticated user');
       }
 
-      console.log("🚫 Adding blocked site...");
+      console.log("🚫 Adding blocked site to Realtime Database...");
       const result = await addBlockedSite(user.uid, siteData);
       
       // Refresh blocked sites and stats
@@ -339,8 +317,12 @@ export function AuthProvider({ children }) {
   // Update blocked site
   const updateSite = async (siteId, siteData) => {
     try {
-      console.log("📝 Updating blocked site...");
-      await updateBlockedSite(siteId, siteData);
+      if (!user?.uid) {
+        throw new Error('No authenticated user');
+      }
+
+      console.log("📝 Updating blocked site in Realtime Database...");
+      await updateBlockedSite(user.uid, siteId, siteData);
       
       // Refresh blocked sites and stats
       await refreshUserData();
@@ -355,8 +337,12 @@ export function AuthProvider({ children }) {
   // Remove blocked site
   const removeSite = async (siteId) => {
     try {
-      console.log("🗑️ Removing blocked site...");
-      await removeBlockedSite(siteId);
+      if (!user?.uid) {
+        throw new Error('No authenticated user');
+      }
+
+      console.log("🗑️ Removing blocked site from Realtime Database...");
+      await removeBlockedSite(user.uid, siteId);
       
       // Refresh blocked sites and stats
       await refreshUserData();
@@ -398,21 +384,22 @@ export function AuthProvider({ children }) {
     try {
       if (!user?.uid) return;
 
-      console.log("🔄 Refreshing user data...");
-      
-      // Reload user profile
+      // Get user profile from Firestore
       const userProfile = await getUserProfile(user.uid);
-      if (userProfile) {
-        setUser(prev => ({ ...prev, ...userProfile }));
-      }
+      setUser(prev => ({ ...prev, ...userProfile }));
 
-      // Reload blocked sites
+      // Get blocked sites from Realtime Database
+      console.log("📥 Fetching blocked sites from Realtime Database...");
       const sites = await getBlockedSites(user.uid);
       setBlockedSites(sites);
-      
-      // Recalculate stats
-      const totalSites = sites.length; // All returned sites are active (getBlockedSites filters for is_active == true)
-      const activeSites = sites.length; // Same as totalSites since we only get active tracking sites
+
+      // Get subscription from Firestore
+      const subscription = await getUserSubscription(user.uid);
+      setSubscription(subscription);
+
+      // Calculate stats
+      const totalSites = sites.length;
+      const activeSites = sites.filter(site => site.is_active).length;
       const totalTimeSpent = sites.reduce((sum, site) => sum + (site.total_time_spent || 0), 0);
       const todayTimeSpent = sites.reduce((sum, site) => sum + (site.time_spent_today || 0), 0);
       
@@ -426,10 +413,12 @@ export function AuthProvider({ children }) {
       };
       
       setUserStats(stats);
-      
-      console.log("✅ User data refreshed");
+
+      console.log("✅ User data refreshed successfully");
+      return { userProfile, sites, subscription, stats };
     } catch (error) {
       console.error("❌ Error refreshing user data:", error);
+      throw error;
     }
   };
 
@@ -456,12 +445,4 @@ export function AuthProvider({ children }) {
       {children}
     </AuthContext.Provider>
   );
-}
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-}; 
+} 
