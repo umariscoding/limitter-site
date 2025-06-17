@@ -355,15 +355,12 @@ export const getBlockedSites = async (userId, includeInactive = false) => {
       q = query(
         collection(db, 'blocked_sites'),
         where('user_id', '==', userId),
-        orderBy('created_at', 'desc')
       );
     } else {
       // Get only active sites (default behavior)
       q = query(
         collection(db, 'blocked_sites'),
-        where('user_id', '==', userId),
-        where('is_active', '==', true),
-        orderBy('created_at', 'desc')
+        where('user_id', '==', userId)
       );
     }
     
