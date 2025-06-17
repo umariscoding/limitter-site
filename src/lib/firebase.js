@@ -2035,6 +2035,7 @@ export const grantPlanBenefits = async (userId, newPlan, previousPlan = 'free', 
       const overrideRef = doc(db, 'user_overrides', userId);
       await setDoc(overrideRef, {
         user_id: userId,
+        overrides: -1,
         overrides_left: -1, // Unlimited
         monthly_limit: -1, // Unlimited
         total_overrides_received: -1, // Unlimited
