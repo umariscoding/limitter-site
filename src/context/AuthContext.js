@@ -7,20 +7,12 @@ import {
   signUp as firebaseSignUp,
   logIn as firebaseLogIn,
   logOut as firebaseLogOut,
-  getCurrentUser,
   getUserProfile, 
-  createUserProfile, 
   updateUserProfile,
   addBlockedSite,
   getBlockedSites,
   updateBlockedSite,
   removeBlockedSite,
-  getUserSubscription,
-  createSubscription,
-  checkIfUserNeedsMigration,
-  migrateBlockedSitesToNewSchema,
-  getUserAnalytics,
-  exportAnalyticsData,
 } from '../lib/firebase';
 
 const AuthContext = createContext();
@@ -93,24 +85,24 @@ export function AuthProvider({ children }) {
       // Load user's blocked sites and calculate stats
       try {
         // Check if user needs migration to new schema
-        const needsMigration = await checkIfUserNeedsMigration(firebaseUser.uid);
-        if (needsMigration) {
-          console.log("🔄 User needs schema migration, starting migration...");
-          try {
-            const migrationResult = await migrateBlockedSitesToNewSchema(firebaseUser.uid);
-            console.log("✅ Migration completed:", migrationResult);
-          } catch (migrationError) {
-            console.error("❌ Migration failed:", migrationError);
-            // Continue loading even if migration fails
-          }
-        }
+        // const needsMigration = await checkIfUserNeedsMigration(firebaseUser.uid);
+        // if (needsMigration) {
+        //   console.log("🔄 User needs schema migration, starting migration...");
+        //   try {
+        //     const migrationResult = await migrateBlockedSitesToNewSchema(firebaseUser.uid);
+        //     console.log("✅ Migration completed:", migrationResult);
+        //   } catch (migrationError) {
+        //     console.error("❌ Migration failed:", migrationError);
+        //     // Continue loading even if migration fails
+        //   }
+        // }
         
-        const sites = await getBlockedSites(firebaseUser.uid);
+        const sites = await getBlockedSites(firebaseUser.uid, true);
         setBlockedSites(sites);
         
         // Calculate stats from the data we already have
         const totalSites = sites.length;
-        const activeSites = sites.filter(site => site.is_blocked).length;
+        const activeSites = sites.filter(site => site.is_active !== false).length;
         const totalTimeSpent = sites.reduce((sum, site) => sum + (site.total_time_spent || 0), 0);
         const todayTimeSpent = sites.reduce((sum, site) => sum + (site.time_spent_today || 0), 0);
         
@@ -407,7 +399,7 @@ export function AuthProvider({ children }) {
       }
 
       // Reload blocked sites
-      const sites = await getBlockedSites(user.uid);
+      const sites = await getBlockedSites(user.uid, true);
       setBlockedSites(sites);
       
       // Recalculate stats

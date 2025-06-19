@@ -127,7 +127,12 @@ export default function BlockedSitesModal({ isOpen, onClose, onEditSite }) {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredSites.map((site) => (
-                  <div key={site.id} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
+                  <div 
+                    key={site.id} 
+                    className={`bg-gray-50 dark:bg-gray-700 rounded-lg p-4 border border-gray-200 dark:border-gray-600 ${
+                      site.is_active === false ? 'opacity-60' : ''
+                    }`}
+                  >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1 min-w-0">
                         <h3 className="font-medium text-gray-900 dark:text-white truncate">
@@ -169,6 +174,27 @@ export default function BlockedSitesModal({ isOpen, onClose, onEditSite }) {
                         </span>
                       </div>
                       <div className="flex justify-between text-sm">
+                        <span className="text-gray-600 dark:text-gray-400">Time Remaining:</span>
+                        <span className="font-medium">
+                          {(() => {
+                            const remainingSeconds = site.time_remaining || 0;
+                            const hours = Math.floor(remainingSeconds / 3600);
+                            const minutes = Math.floor((remainingSeconds % 3600) / 60);
+                            const seconds = remainingSeconds % 60;
+                            
+                            if (remainingSeconds === 0) {
+                              return 'None';
+                            } else if (hours > 0) {
+                              return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+                            } else if (minutes > 0) {
+                              return `${minutes}m`;
+                            } else {
+                              return `${seconds}s`;
+                            }
+                          })()}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
                         <span className="text-gray-600 dark:text-gray-400">Added:</span>
                         <span className="font-medium">
                           {site.created_at ? new Date(site.created_at.seconds * 1000).toLocaleDateString() : 'Recently'}
@@ -179,14 +205,23 @@ export default function BlockedSitesModal({ isOpen, onClose, onEditSite }) {
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleEdit(site)}
-                        className="flex-1 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-sm font-medium rounded hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+                        className={`flex-1 px-3 py-1.5 ${
+                          site.is_active === false
+                            ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed'
+                            : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40'
+                        } text-sm font-medium rounded transition-colors`}
+                        disabled={site.is_active === false}
                       >
                         Edit
                       </button>
                       <button
                         onClick={() => handleDelete(site.id)}
-                        disabled={isLoading}
-                        className="flex-1 px-3 py-1.5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm font-medium rounded hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={isLoading || site.is_active === false}
+                        className={`flex-1 px-3 py-1.5 ${
+                          site.is_active === false
+                            ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed'
+                            : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40'
+                        } text-sm font-medium rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
                       >
                         Delete
                       </button>

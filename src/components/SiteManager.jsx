@@ -223,9 +223,10 @@ export default function SiteManager({ isOpen, onClose, editingSiteData = null })
                 <input
                   type="text"
                   value={formData.url}
+                  disabled={editingSite ? true : false}
                   onChange={(e) => setFormData(prev => ({ ...prev, url: e.target.value }))}
                   placeholder="e.g., youtube.com, facebook.com"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent"
+                  className={`w-full px-3 py-2 ${editingSite ? 'cursor-not-allowed opacity-50' : ''} border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent`}
                   required
                 />
               </div>

@@ -26,8 +26,11 @@ import {
   adminGetSystemStats,
   adminSearchUsers,
   adminSearchSites,
-  checkAdminStatus
+  checkAdminStatus,
+  calculateSiteEfficiency
 } from "../../lib/firebase";
+import { toast } from 'react-hot-toast';
+import AdminSiteModal from "../../components/AdminSiteModal";
 
 export default function AdminPanel() {
   const { user, loading } = useAuth();
@@ -49,6 +52,14 @@ export default function AdminPanel() {
   const [selectedSite, setSelectedSite] = useState(null);
   const [collections, setCollections] = useState({});
   
+  // Pagination states
+  const [lastUserDoc, setLastUserDoc] = useState(null);
+  const [lastSiteDoc, setLastSiteDoc] = useState(null);
+  const [hasMoreUsers, setHasMoreUsers] = useState(true);
+  const [hasMoreSites, setHasMoreSites] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const ITEMS_PER_PAGE = 10;
+  
   // Modal states
   const [showUserModal, setShowUserModal] = useState(false);
   const [showSiteModal, setShowSiteModal] = useState(false);
@@ -57,11 +68,17 @@ export default function AdminPanel() {
   const [showUserSitesModal, setShowUserSitesModal] = useState(false);
   const [userSites, setUserSites] = useState([]);
   const [loadingUserDetails, setLoadingUserDetails] = useState(false);
+  const [selectedSiteForEdit, setSelectedSiteForEdit] = useState(null);
+  const [showSiteEditModal, setShowSiteEditModal] = useState(false);
   
   // Form states
   const [grantQuantity, setGrantQuantity] = useState(1);
   const [grantReason, setGrantReason] = useState('');
   const [selectedPlan, setSelectedPlan] = useState('free');
+  const [isChangingPlan, setIsChangingPlan] = useState(false);
+  const [isGrantingOverrides, setIsGrantingOverrides] = useState(false);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [isLoadingSites, setIsLoadingSites] = useState(false);
 
   // Check admin status
   useEffect(() => {
@@ -90,11 +107,14 @@ export default function AdminPanel() {
   // Load initial data
   useEffect(() => {
     if (isAdmin) {
-      loadSystemStats();
-      loadUsers();
-      loadSites();
+        loadSystemStats();
+      if (activeTab === 'users') {
+        loadUsers();
+      } else if (activeTab === 'sites') {
+        loadSites();
+      }
     }
-  }, [isAdmin]);
+  }, [isAdmin, activeTab]);
 
   const loadSystemStats = async () => {
     try {
@@ -105,22 +125,52 @@ export default function AdminPanel() {
     }
   };
 
-  const loadUsers = async () => {
+  const loadUsers = async (isLoadingMore = false) => {
     try {
-      const allUsers = await getAllUsers();
-      setUsers(allUsers);
+      setIsLoadingUsers(true);
+      const { users: newUsers, lastDoc } = await getAllUsers(isLoadingMore ? lastUserDoc : null, ITEMS_PER_PAGE);
+      
+      if (newUsers.length < ITEMS_PER_PAGE) {
+        setHasMoreUsers(false);
+      }
+      
+      setUsers(prev => isLoadingMore ? [...prev, ...newUsers] : newUsers);
+      setLastUserDoc(lastDoc);
     } catch (error) {
       console.error("Error loading users:", error);
+    } finally {
+      setIsLoadingUsers(false);
+      setIsLoadingMore(false);
     }
   };
 
-  const loadSites = async () => {
+  const loadSites = async (isLoadingMore = false) => {
     try {
-      const allSites = await adminGetAllSites();
-      setSites(allSites);
+      setIsLoadingSites(true);
+      const { sites: newSites, lastDoc } = await adminGetAllSites(isLoadingMore ? lastSiteDoc : null, ITEMS_PER_PAGE);
+      
+      if (newSites.length < ITEMS_PER_PAGE) {
+        setHasMoreSites(false);
+      }
+      
+      setSites(prev => isLoadingMore ? [...prev, ...newSites] : newSites);
+      setLastSiteDoc(lastDoc);
     } catch (error) {
       console.error("Error loading sites:", error);
+    } finally {
+      setIsLoadingSites(false);
+      setIsLoadingMore(false);
     }
+  };
+
+  const handleLoadMoreUsers = async () => {
+    setIsLoadingMore(true);
+    await loadUsers(true);
+  };
+
+  const handleLoadMoreSites = async () => {
+    setIsLoadingMore(true);
+    await loadSites(true);
   };
 
   const handleUserClick = async (userId) => {
@@ -138,23 +188,33 @@ export default function AdminPanel() {
   };
 
   const handleGrantOverrides = async () => {
-    if (!selectedUser || grantQuantity < 1) return;
+    if (!selectedUser || !grantQuantity || grantQuantity < 1) return;
     
     try {
-      await adminGrantOverrides(selectedUser.profile.id, grantQuantity, grantReason);
+      setIsGrantingOverrides(true);
+      await adminGrantOverrides(selectedUser.profile.id, grantQuantity, grantReason || "Admin panel override grant");
+      
       setShowGrantModal(false);
       setGrantQuantity(1);
       setGrantReason('');
       
-      // Refresh user details
-      const updatedDetails = await getUserDetailsWithActivity(selectedUser.profile.id);
-      setSelectedUser(updatedDetails);
+      // Show success toast and refresh page
+      toast.success(
+        <div>
+          <p className="font-semibold">Overrides Granted!</p>
+          <p className="text-sm">Added {grantQuantity} override{grantQuantity !== 1 ? 's' : ''} to {selectedUser.profile.profile_name}</p>
+        </div>,
+        {
+          duration: 1500,
+        }
+      );
       
-      // Refresh users list
-      loadUsers();
-      loadSystemStats();
+      // Immediate page refresh
+      window.location.reload();
     } catch (error) {
       console.error("Error granting overrides:", error);
+      toast.error("Failed to grant overrides. Please try again.");
+      setIsGrantingOverrides(false);
     }
   };
 
@@ -162,13 +222,14 @@ export default function AdminPanel() {
     if (!selectedUser) return;
     
     try {
+      setIsChangingPlan(true);
       console.log("🔄 Changing user plan and granting benefits...");
       
       // Get plan details for immediate benefits display
       const planDetails = {
         free: { overrides: 0, name: 'FREE' },
         pro: { overrides: 15, name: 'PRO' },
-        elite: { overrides: 'unlimited', name: 'ELITE' }
+        elite: { overrides: 200, name: 'ELITE' }
       }[selectedPlan];
       
       await adminChangeUserPlan(selectedUser.profile.id, selectedPlan, "Admin panel plan change");
@@ -176,31 +237,29 @@ export default function AdminPanel() {
       // Show immediate success message with benefits
       console.log('Plan change successful, plan details:', planDetails);
       
-      const benefitsText = planDetails.overrides === 'unlimited' 
-        ? '∞ Unlimited overrides activated!'
-        : planDetails.overrides > 0 
-          ? `+${planDetails.overrides} overrides granted instantly!`
-          : 'Plan features activated!';
-          
-      alert(`🎉 Plan changed to ${planDetails.name}!\n\n${benefitsText}\n\nAll plan benefits have been applied immediately - just like purchasing the package for free!\n\nPage will reload to show updated data...`);
+      const benefitsText = planDetails.overrides > 0
+        ? `+${planDetails.overrides} overrides granted instantly!`
+        : 'Plan features activated!';
       
       setShowPlanModal(false);
       
-      // Refresh user details to show updated data
-      const updatedDetails = await getUserDetailsWithActivity(selectedUser.profile.id);
-      setSelectedUser(updatedDetails);
+      // Show success toast and refresh page
+      toast.success(
+        <div>
+          <p className="font-semibold">Plan changed to {planDetails.name}!</p>
+          <p className="text-sm">{benefitsText}</p>
+        </div>,
+        {
+          duration: 1500,
+        }
+      );
       
-      // Refresh users list and stats
-      await loadUsers();
-      await loadSystemStats();
-      
-      // Reload page to ensure all data is fresh
-      setTimeout(() => {
-        window.location.reload();
-      }, 2000);
+      // Immediate page refresh
+      window.location.reload();
     } catch (error) {
       console.error("Error changing plan:", error);
-      alert("Error changing plan. Please try again.");
+      toast.error("Failed to change plan. Please try again.");
+      setIsChangingPlan(false);
     }
   };
 
@@ -280,11 +339,86 @@ export default function AdminPanel() {
     
     try {
       console.log("Loading user sites...");
-      const sites = await getUserSites(selectedUser.profile.id);
-      setUserSites(sites);
+      
+      // First check if we have the sites in our existing state
+      const existingSites = sites.filter(site => site.user_id === selectedUser.profile.id);
+      
+      if (existingSites.length > 0) {
+        console.log("Using sites from existing state...");
+        // Get analytics for existing sites
+        const sitesWithAnalytics = existingSites.map(site => ({
+          ...site,
+          analytics: {
+            total_time_saved_minutes: Math.round((site.total_time_spent || 0) / 60),
+            overrides_used: site.overrides_used || 0
+          },
+          efficiency: calculateSiteEfficiency(site)
+        }));
+        setUserSites(sitesWithAnalytics);
+        setShowUserSitesModal(true);
+        return;
+      }
+      
+      // If not found in state, fetch from Firebase
+      console.log("Fetching sites from Firebase...");
+      const fetchedSites = await getUserSites(selectedUser.profile.id);
+      const sitesWithAnalytics = fetchedSites.map(site => ({
+        ...site,
+        analytics: {
+          total_time_saved_minutes: Math.round((site.total_time_spent || 0) / 60),
+          overrides_used: site.overrides_used || 0
+        },
+        efficiency: calculateSiteEfficiency(site)
+      }));
+      setUserSites(sitesWithAnalytics);
       setShowUserSitesModal(true);
     } catch (error) {
       console.error("Error loading user sites:", error);
+      toast.error("Failed to load user sites");
+    }
+  };
+
+  // Reset pagination when searching
+  const handleSearch = async () => {
+    if (searchTerm) {
+      if (activeTab === 'users') {
+        const results = await adminSearchUsers(searchTerm);
+        setUsers(results);
+        setHasMoreUsers(false);
+        setLastUserDoc(null);
+      } else if (activeTab === 'sites') {
+        const results = await adminSearchSites(searchTerm);
+        setSites(results);
+        setHasMoreSites(false);
+        setLastSiteDoc(null);
+      }
+    } else {
+      // Reset and load first page
+      if (activeTab === 'users') {
+        setHasMoreUsers(true);
+        setLastUserDoc(null);
+        loadUsers();
+      } else if (activeTab === 'sites') {
+        setHasMoreSites(true);
+        setLastSiteDoc(null);
+        loadSites();
+      }
+    }
+  };
+
+  const handleSiteClick = (site) => {
+    setSelectedSiteForEdit(site);
+    setShowSiteEditModal(true);
+  };
+
+  const handleUpdateSite = async (siteId, updateData) => {
+    try {
+      await adminUpdateSite(siteId, updateData);
+      // Refresh the sites list
+      loadSites();
+    } catch (error) {
+      console.error("Error updating site:", error);
+      throw error;
     }
   };
 
@@ -388,16 +522,16 @@ export default function AdminPanel() {
                     <h2 className="text-2xl font-bold text-gray-900 dark:text-white">System Analytics</h2>
                   </div>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                     <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-2xl text-white shadow-lg hover:shadow-xl transition-shadow duration-300">
                       <div className="flex items-center justify-between mb-4">
                         <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
                           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                           </svg>
                         </div>
                         <div className="text-right">
-                          <div className="text-3xl font-bold">{systemStats.users.total}</div>
+                          <div className="text-3xl font-bold">{systemStats?.users?.total || 0}</div>
                           <div className="text-blue-100 text-sm">Total Users</div>
                         </div>
                       </div>
@@ -414,29 +548,12 @@ export default function AdminPanel() {
                           </svg>
                         </div>
                         <div className="text-right">
-                          <div className="text-3xl font-bold">{systemStats.sites.active}</div>
-                          <div className="text-green-100 text-sm">Active Sites</div>
+                          <div className="text-3xl font-bold">{systemStats?.sites?.total || 0}</div>
+                          <div className="text-green-100 text-sm">Total Sites</div>
                         </div>
                       </div>
                       <div className="w-full bg-white/20 rounded-full h-2">
                         <div className="bg-white h-2 rounded-full" style={{width: '85%'}}></div>
-                      </div>
-                    </div>
-                    
-                    <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-6 rounded-2xl text-white shadow-lg hover:shadow-xl transition-shadow duration-300">
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                          </svg>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-3xl font-bold">{systemStats.overrides.totalAvailable}</div>
-                          <div className="text-purple-100 text-sm">Available Overrides</div>
-                        </div>
-                      </div>
-                      <div className="w-full bg-white/20 rounded-full h-2">
-                        <div className="bg-white h-2 rounded-full" style={{width: '60%'}}></div>
                       </div>
                     </div>
                     
@@ -448,7 +565,7 @@ export default function AdminPanel() {
                           </svg>
                         </div>
                         <div className="text-right">
-                          <div className="text-3xl font-bold">${systemStats.overrides.totalMoneySpent.toFixed(0)}</div>
+                          <div className="text-3xl font-bold">${(systemStats?.overrides?.totalMoneySpent || 0).toFixed(0)}</div>
                           <div className="text-orange-100 text-sm">Total Revenue</div>
                         </div>
                       </div>
@@ -467,24 +584,51 @@ export default function AdminPanel() {
                       Subscription Distribution
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      {Object.entries(systemStats.subscriptions.byPlan).map(([plan, count]) => (
-                        <div key={plan} className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-md hover:shadow-lg transition-shadow duration-300 border border-gray-200 dark:border-gray-700">
-                          <div className="text-center">
-                            <div className={`w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center ${
-                              plan === 'free' ? 'bg-gradient-to-r from-gray-400 to-gray-500' :
-                              plan === 'pro' ? 'bg-gradient-to-r from-blue-500 to-blue-600' :
-                              'bg-gradient-to-r from-purple-500 to-purple-600'
-                            }`}>
-                              <span className="text-white font-bold text-xl">{plan.charAt(0).toUpperCase()}</span>
-                            </div>
-                            <div className="text-3xl font-bold text-gray-900 dark:text-white">{count}</div>
-                            <div className="text-sm text-gray-600 dark:text-gray-400 capitalize font-medium">{plan} Plan</div>
-                            <div className="mt-2 text-xs text-gray-500">
-                              {((count / systemStats.users.total) * 100).toFixed(1)}% of users
+                      {!systemStats ? (
+                        // Loading state
+                        [...Array(3)].map((_, index) => (
+                          <div key={index} className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-md border border-gray-200 dark:border-gray-700 animate-pulse">
+                            <div className="text-center">
+                              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gray-200 dark:bg-gray-700"></div>
+                              <div className="h-8 w-24 mx-auto bg-gray-200 dark:bg-gray-700 rounded mb-2"></div>
+                              <div className="h-4 w-20 mx-auto bg-gray-200 dark:bg-gray-700 rounded"></div>
                             </div>
                           </div>
+                        ))
+                      ) : !systemStats.users?.byPlan || Object.keys(systemStats.users.byPlan).length === 0 ? (
+                        // Empty state
+                        <div className="col-span-3 text-center py-8">
+                          <div className="w-16 h-16 mx-auto mb-4 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                            <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                            </svg>
+                          </div>
+                          <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No Subscription Data</h4>
+                          <p className="text-gray-600 dark:text-gray-400">
+                            Subscription information will appear here once users start subscribing to plans.
+                          </p>
                         </div>
-                      ))}
+                      ) : (
+                        // Default view with data
+                        Object.entries(systemStats.users.byPlan).map(([plan, count]) => (
+                          <div key={plan} className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-md hover:shadow-lg transition-shadow duration-300 border border-gray-200 dark:border-gray-700">
+                            <div className="text-center">
+                              <div className={`w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center ${
+                                plan === 'free' ? 'bg-gradient-to-r from-gray-400 to-gray-500' :
+                                plan === 'pro' ? 'bg-gradient-to-r from-blue-500 to-blue-600' :
+                                'bg-gradient-to-r from-purple-500 to-purple-600'
+                              }`}>
+                                <span className="text-white font-bold text-xl">{plan.charAt(0).toUpperCase()}</span>
+                              </div>
+                              <div className="text-3xl font-bold text-gray-900 dark:text-white">{count}</div>
+                              <div className="text-sm text-gray-600 dark:text-gray-400 capitalize font-medium">{plan} Plan</div>
+                              <div className="mt-2 text-xs text-gray-500">
+                                {((count / (systemStats?.users?.total || 1)) * 100).toFixed(1)}% of users
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
                 </div>
@@ -500,20 +644,13 @@ export default function AdminPanel() {
                 <div className="flex gap-4">
                   <input
                     type="text"
-                    placeholder="Search users by email, name, or ID..."
+                    placeholder={activeTab === 'users' ? "Search users by email, name, or ID..." : "Search sites by name, URL, or user ID..."}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
                   />
                   <button
-                    onClick={async () => {
-                      if (searchTerm) {
-                        const results = await adminSearchUsers(searchTerm);
-                        setUsers(results);
-                      } else {
-                        loadUsers();
-                      }
-                    }}
+                    onClick={handleSearch}
                     className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90"
                   >
                     Search
@@ -565,6 +702,29 @@ export default function AdminPanel() {
                     </div>
                   ))}
                 </div>
+                {hasMoreUsers && (
+                  <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+                    <button
+                      onClick={handleLoadMoreUsers}
+                      disabled={isLoadingMore}
+                      className="w-full py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-2"
+                    >
+                      {isLoadingMore ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-gray-600 dark:border-gray-300 border-t-transparent rounded-full animate-spin"></div>
+                          Loading...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                          Show More
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -577,20 +737,13 @@ export default function AdminPanel() {
                 <div className="flex gap-4">
                   <input
                     type="text"
-                    placeholder="Search sites by name, URL, or user ID..."
+                    placeholder={activeTab === 'users' ? "Search users by email, name, or ID..." : "Search sites by name, URL, or user ID..."}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
                   />
                   <button
-                    onClick={async () => {
-                      if (searchTerm) {
-                        const results = await adminSearchSites(searchTerm);
-                        setSites(results);
-                      } else {
-                        loadSites();
-                      }
-                    }}
+                    onClick={handleSearch}
                     className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90"
                   >
                     Search
@@ -607,7 +760,8 @@ export default function AdminPanel() {
                   {sites.map((site) => (
                     <div
                       key={site.id}
-                      className="px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700"
+                      className="px-6 py-4 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+                      onClick={() => handleSiteClick(site)}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
@@ -635,14 +789,20 @@ export default function AdminPanel() {
                             // Inactive sites: only show hard delete and reactivate options
                             <>
                               <button
-                                onClick={() => handleReactivateSite(site.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleReactivateSite(site.id);
+                                }}
                                 className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded hover:bg-green-200"
                                 title="Reactivate this site"
                               >
                                 Reactivate
                               </button>
                               <button
-                                onClick={() => handleHardDeleteSite(site.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleHardDeleteSite(site.id);
+                                }}
                                 className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200"
                                 title="Permanently delete this site"
                               >
@@ -653,14 +813,20 @@ export default function AdminPanel() {
                             // Active sites: show soft delete and hard delete options
                             <>
                               <button
-                                onClick={() => handleSoftDeleteSite(site.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSoftDeleteSite(site.id);
+                                }}
                                 className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded hover:bg-yellow-200"
                                 title="Deactivate this site"
                               >
                                 Soft Delete
                               </button>
                               <button
-                                onClick={() => handleHardDeleteSite(site.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleHardDeleteSite(site.id);
+                                }}
                                 className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200"
                                 title="Permanently delete this site"
                               >
@@ -673,6 +839,29 @@ export default function AdminPanel() {
                     </div>
                   ))}
                 </div>
+                {hasMoreSites && (
+                  <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+                    <button
+                      onClick={handleLoadMoreSites}
+                      disabled={isLoadingMore}
+                      className="w-full py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-2"
+                    >
+                      {isLoadingMore ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-gray-600 dark:border-gray-300 border-t-transparent rounded-full animate-spin"></div>
+                          Loading...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                          Show More
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -758,6 +947,17 @@ export default function AdminPanel() {
                           {selectedUser.profile?.created_at ? new Date(selectedUser.profile.created_at.seconds * 1000).toLocaleDateString() : 'N/A'}
                         </span>
                       </div>
+
+                      {/* View Sites Button */}
+                      <button
+                        onClick={handleViewUserSites}
+                        className="mt-4 w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
+                        </svg>
+                        View User Sites
+                      </button>
                     </div>
                   </div>
 
@@ -1042,13 +1242,25 @@ export default function AdminPanel() {
                 <div className="flex gap-3 mt-8">
                   <button
                     onClick={handleGrantOverrides}
-                    disabled={!grantQuantity || grantQuantity < 1}
+                    disabled={!grantQuantity || grantQuantity < 1 || isGrantingOverrides}
                     className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-semibold"
                   >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Grant {grantQuantity} Override{grantQuantity !== 1 ? 's' : ''}
+                    {isGrantingOverrides ? (
+                      <>
+                        <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Granting...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Grant {grantQuantity} Override{grantQuantity !== 1 ? 's' : ''}
+                      </>
+                    )}
                   </button>
                   <button
                     onClick={() => {
@@ -1056,7 +1268,8 @@ export default function AdminPanel() {
                       setGrantQuantity(1);
                       setGrantReason('');
                     }}
-                    className="px-6 py-3 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors duration-200 font-semibold"
+                    disabled={isGrantingOverrides}
+                    className="px-6 py-3 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Cancel
                   </button>
@@ -1069,8 +1282,8 @@ export default function AdminPanel() {
         {/* Enhanced Change Plan Modal */}
         {showPlanModal && selectedUser && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-300">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-2xl w-full shadow-2xl animate-in slide-in-from-bottom-8 duration-300">
-              {/* Header */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-2xl w-full shadow-2xl animate-in slide-in-from-bottom-8 duration-300 flex flex-col max-h-[90vh]">
+              {/* Header - Fixed */}
               <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4 text-white rounded-t-2xl">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
@@ -1085,7 +1298,8 @@ export default function AdminPanel() {
                 </div>
               </div>
 
-              <div className="p-6">
+              {/* Content - Scrollable */}
+              <div className="p-6 overflow-y-auto">
                 {/* User Info */}
                 <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 mb-6 border border-blue-200 dark:border-blue-800">
                   <div className="flex items-center gap-3">
@@ -1133,7 +1347,7 @@ export default function AdminPanel() {
                         id: 'elite',
                         name: 'Elite',
                         price: '$11.99',
-                        overrides: 'unlimited',
+                        overrides: 200,
                         features: ['10 devices', 'Unlimited overrides', 'AI insights', 'Journaling', '90-day history', 'Smart AI recommendations'],
                         gradient: 'from-purple-500 to-purple-600',
                         borderColor: 'border-purple-500'
@@ -1224,8 +1438,8 @@ export default function AdminPanel() {
                       {(() => {
                         const planBenefits = {
                           free: { overrides: 0, monthly: 0 },
-                          pro: { overrides: 10, monthly: 10 },
-                          elite: { overrides: 50, monthly: 50 }
+                          pro: { overrides: 15, monthly: 15 },
+                          elite: { overrides: 200, monthly: 200 }
                         };
                         const benefits = planBenefits[selectedPlan] || planBenefits.free;
                         
@@ -1269,25 +1483,41 @@ export default function AdminPanel() {
                     </div>
                   </div>
                 )}
+              </div>
 
-                {/* Action Buttons */}
+              {/* Footer - Fixed */}
+              <div className="p-6 border-t border-gray-200 dark:border-gray-700">
+                {/* Plan Change Modal Action Buttons */}
                 <div className="flex gap-3">
                   <button
                     onClick={handleChangePlan}
-                    disabled={selectedPlan === selectedUser.profile?.plan}
+                    disabled={selectedPlan === selectedUser.profile?.plan || isChangingPlan}
                     className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-semibold"
                   >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Change to {selectedPlan.charAt(0).toUpperCase() + selectedPlan.slice(1)}
+                    {isChangingPlan ? (
+                      <>
+                        <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Changing Plan...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Change to {selectedPlan.charAt(0).toUpperCase() + selectedPlan.slice(1)}
+                      </>
+                    )}
                   </button>
                   <button
                     onClick={() => {
                       setShowPlanModal(false);
                       setSelectedPlan(selectedUser.profile?.plan || 'free');
                     }}
-                    className="px-6 py-3 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors duration-200 font-semibold"
+                    disabled={isChangingPlan}
+                    className="px-6 py-3 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Cancel
                   </button>
@@ -1351,9 +1581,6 @@ export default function AdminPanel() {
                             Efficiency
                           </th>
                           <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-600">
-                            Created
-                          </th>
-                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-600">
                             Actions
                           </th>
                         </tr>
@@ -1409,9 +1636,7 @@ export default function AdminPanel() {
                                 </span>
                               </div>
                             </td>
-                            <td className="px-4 py-4 border-b border-gray-200 dark:border-gray-600 text-sm text-gray-600 dark:text-gray-400">
-                              {formatActivityTimestamp(site.createdAt)}
-                            </td>
+                           
                             <td className="px-4 py-4 border-b border-gray-200 dark:border-gray-600">
                               <div className="flex gap-2">
                                 {site.is_active ? (
@@ -1500,6 +1725,14 @@ export default function AdminPanel() {
             </div>
           </div>
         )}
+
+        {/* Site Edit Modal */}
+        <AdminSiteModal
+          isOpen={showSiteEditModal}
+          onClose={() => setShowSiteEditModal(false)}
+          site={selectedSiteForEdit}
+          onUpdate={handleUpdateSite}
+        />
       </div>
       <Footer />
     </>

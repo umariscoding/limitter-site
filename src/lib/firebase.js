@@ -18,12 +18,13 @@ import {
   getDocs, 
   query, 
   where, 
-  orderBy, 
+  orderBy as firestoreOrderBy, 
   serverTimestamp, 
-  limit 
+  limit as firestoreLimit,
+  startAfter,
+  runTransaction
 } from 'firebase/firestore';
 
-// Firebase configuration using direct .env values
 const firebaseConfig = {
   apiKey: "AIzaSyDmeE0h4qlRTs8c87bQhvh8Hvfe0NZsqmQ",
   authDomain: "testing-396cd.firebaseapp.com",
@@ -34,43 +35,30 @@ const firebaseConfig = {
   measurementId: "G-XKPB99GTGF"
 };
 
-console.log('🔍 Firebase Config Check:', {
-  apiKey: firebaseConfig.apiKey?.substring(0, 20) + '...',
-  projectId: firebaseConfig.projectId,
-  configured: !!firebaseConfig.apiKey && !!firebaseConfig.projectId
-});
-
 if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
   console.error('❌ Missing Firebase configuration');
   throw new Error('Missing Firebase configuration');
 }
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
-// Authentication functions
 export const signUp = async (email, password, metadata = {}) => {
   try {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
-
-    // Create user profile in Firestore
     await createUserProfile(user.uid, {
       email: user.email,
       ...metadata
     });
-
-    // Create initial subscription for the user
     await createSubscription(user.uid, metadata.plan || 'free');
-
-    console.log("✅ User profile and subscription created successfully");
+    await updateUserStats(user.uid, 'create', metadata.plan || 'free');
+    toast.success("User created successfully");
     return { user };
   } catch (error) {
     console.error("Firebase signup error:", error);
     
-    // Provide more specific error messages
     if (error.code === 'auth/email-already-in-use') {
       throw new Error('Email already in use. Please try a different email or sign in.');
     } else if (error.code === 'auth/invalid-email') {
@@ -85,15 +73,12 @@ export const signUp = async (email, password, metadata = {}) => {
 
 export const logIn = async (email, password) => {
   try {
-    console.log("🔐 Starting login process...");
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    
-    console.log("✅ Login successful");
+    toast.success("Login successful");
     return { user: userCredential.user };
   } catch (error) {
     console.error("Firebase login error:", error);
     
-    // Provide more specific error messages
     if (error.code === 'auth/invalid-credential') {
       throw new Error('Invalid email or password. Please try again.');
     } else if (error.code === 'auth/invalid-email') {
@@ -109,31 +94,22 @@ export const logIn = async (email, password) => {
 export const logOut = async () => {
   try {
     await signOut(auth);
+    toast.success("Logged out successfully");
   } catch (error) {
     console.error("Logout error:", error);
     throw new Error(error.message);
   }
 };
 
-export const getCurrentUser = () => {
-  return new Promise((resolve) => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      unsubscribe();
-      resolve({ data: { user } });
-    });
-  });
-};
+// export const getSession = () => {
+//   return new Promise((resolve) => {
+//     const unsubscribe = onAuthStateChanged(auth, (user) => {
+//       unsubscribe();
+//       resolve({ data: { session: user ? { user } : null } });
+//     });
+//   });
+// };
 
-export const getSession = () => {
-  return new Promise((resolve) => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      unsubscribe();
-      resolve({ data: { session: user ? { user } : null } });
-    });
-  });
-};
-
-// User profile functions
 export const createUserProfile = async (userId, userData) => {
   try {
     const userDoc = {
@@ -142,7 +118,7 @@ export const createUserProfile = async (userId, userData) => {
       profile_email: userData.email || '',
       profile_image: userData.profileImage || null,
       plan: userData.plan || 'free',
-      isAdmin: false, // Initialize admin status as false
+      isAdmin: false,
       total_time_saved: 0,
       total_sites_blocked: 0,
       daily_stats: {},
@@ -162,17 +138,13 @@ export const createUserProfile = async (userId, userData) => {
 
 export const getUserProfile = async (userId) => {
   try {
-    console.log("🔍 Attempting to get user profile for:", userId);
-    
     const userDoc = await getDoc(doc(db, 'users', userId));
     
     if (!userDoc.exists()) {
-      console.log("👤 User profile not found");
       return null;
     }
 
     const data = { id: userDoc.id, ...userDoc.data() };
-    console.log("✅ User profile found:", data);
     return data;
   } catch (error) {
     console.error("❌ Error in getUserProfile:", error);
@@ -187,7 +159,6 @@ export const updateUserProfile = async (userId, userData) => {
       updated_at: serverTimestamp(),
     });
 
-    // Return updated document
     const updatedDoc = await getDoc(doc(db, 'users', userId));
     return { id: updatedDoc.id, ...updatedDoc.data() };
   } catch (error) {
@@ -196,16 +167,11 @@ export const updateUserProfile = async (userId, userData) => {
   }
 };
 
-// Helper function to normalize domain
 const normalizeDomain = (url) => {
   try {
-    // Remove protocol
     let domain = url.replace(/^https?:\/\//, '');
-    // Remove www prefix
     domain = domain.replace(/^www\./, '');
-    // Remove trailing slash and path
     domain = domain.split('/')[0];
-    // Convert to lowercase
     return domain.toLowerCase();
   } catch (error) {
     console.error('Error normalizing domain:', error);
@@ -213,53 +179,46 @@ const normalizeDomain = (url) => {
   }
 };
 
-// Helper function to update user's blocked sites count (only active sites)
-export const updateUserBlockedSitesCount = async (userId) => {
+export const updateUserBlockedSitesCount = async (userId, change) => {
   try {
-    const q = query(
-      collection(db, 'blocked_sites'),
-      where('user_id', '==', userId),
-      where('is_active', '==', true)
-    );
+    const userDoc = await getDoc(doc(db, 'users', userId));
+    if (!userDoc.exists()) {
+      throw new Error('User not found');
+    }
     
-    const querySnapshot = await getDocs(q);
-    const totalSitesBlocked = querySnapshot.size;
+    const currentCount = userDoc.data().total_sites_blocked || 0;
+    const newCount = Math.max(0, currentCount + change); // Ensure count doesn't go below 0
     
     await updateDoc(doc(db, 'users', userId), {
-      total_sites_blocked: totalSitesBlocked,
+      total_sites_blocked: newCount,
       updated_at: serverTimestamp(),
     });
     
-    console.log(`✅ Updated user ${userId} blocked sites count: ${totalSitesBlocked} (active only)`);
-    return totalSitesBlocked;
+    return newCount;
   } catch (error) {
     console.error("Error updating blocked sites count:", error);
     throw error;
   }
 };
 
-// Blocked Sites Management
 export const addBlockedSite = async (userId, siteData) => {
   try {
     const normalizedDomain = normalizeDomain(siteData.url);
     const documentId = `${userId}_${normalizedDomain}`;
     
-    // Check if site already exists (including inactive ones)
     const existingDoc = await getDoc(doc(db, 'blocked_sites', documentId));
     
     if (existingDoc.exists()) {
       const existingData = existingDoc.data();
       
-      // If site exists but is inactive, reactivate it
       if (!existingData.is_active) {
         const updateData = {
           is_active: true,
           name: siteData.name || existingData.name || normalizedDomain,
-          time_limit: siteData.timeLimit || existingData.time_limit || 1800,
+          time_limit: existingData.time_limit || 1800,
           updated_at: serverTimestamp(),
         };
         
-        // Reset daily time if needed
         const today = new Date().toISOString().split('T')[0];
         if (existingData.last_reset_date !== today) {
           updateData.time_remaining = updateData.time_limit;
@@ -270,10 +229,9 @@ export const addBlockedSite = async (userId, siteData) => {
         }
         
         await updateDoc(doc(db, 'blocked_sites', documentId), updateData);
-        
-        // Update user's total blocked sites count (stored count for reference)
-        await updateUserBlockedSitesCount(userId);
-        
+
+        await updateUserBlockedSitesCount(userId, 1);        
+        toast.success("Website reactivated successfully");
         return { 
           id: documentId, 
           ...existingData, 
@@ -282,7 +240,7 @@ export const addBlockedSite = async (userId, siteData) => {
           message: 'Website already added in the past. Reactivated with preserved settings.'
         };
       } else {
-        // Site exists and is already active
+        toast.error("Website already being tracked");
         return {
           id: documentId,
           ...existingData,
@@ -292,47 +250,34 @@ export const addBlockedSite = async (userId, siteData) => {
       }
     }
     
-    // Create new site document
     const siteDoc = {
       user_id: userId,
       url: normalizedDomain,
       name: siteData.name || normalizedDomain,
-      
-      // Time Management
-      time_limit: siteData.timeLimit || 1800, // Daily limit in seconds (default 30 minutes)
-      time_remaining: siteData.timeLimit || 1800, // Current remaining time in seconds
-      time_spent_today: 0, // Time spent today in seconds
-      last_reset_date: new Date().toISOString().split('T')[0], // YYYY-MM-DD format
-      
-      // Status Fields
-      is_blocked: false, // Whether the site is currently blocked
-      is_active: siteData.isActive !== false, // Whether monitoring is enabled
-      blocked_until: null, // ISO timestamp when blocking expires (null if not blocked)
-      
-      // Scheduling & Advanced Features
-      schedule: siteData.schedule || null, // Time-based blocking schedule configuration
-      
-      // Usage Analytics
-      daily_usage: {}, // Object tracking daily usage by date
-      total_time_spent: 0, // Lifetime total time spent on this site
-      access_count: 0, // Number of times the site was accessed
-      last_accessed: null, // Last access timestamp
-      
-      // Override System
-      override_active: false, // Whether an override is currently active
-      override_initiated_by: null, // Device ID that initiated the override
-      override_initiated_at: null, // When the override was initiated
-      
-      // Timestamps
+      time_limit: siteData.timeLimit || 1800,
+      time_remaining: siteData.timeLimit || 1800,
+      time_spent_today: 0,
+      last_reset_date: new Date().toISOString().split('T')[0],
+      is_blocked: false,
+      is_active: siteData.isActive !== false,
+      blocked_until: null,
+      schedule: siteData.schedule || null,
+      total_time_spent: 0,
+      last_accessed: null,
+      override_active: false,
+      last_reset_timestamp: null,
+      override_initiated_by: null,
+      override_initiated_at: null,
       created_at: serverTimestamp(),
       updated_at: serverTimestamp(),
     };
 
     await setDoc(doc(db, 'blocked_sites', documentId), siteDoc);
     
-    // Update user's total blocked sites count (stored count for reference)
-    await updateUserBlockedSitesCount(userId);
+    await updateUserBlockedSitesCount(userId, 1);
+    await updateSiteStats({ after: { data: () => siteDoc } }, 'create');
     
+    toast.success("Website added successfully");
     return { 
       id: documentId, 
       ...siteDoc, 
@@ -347,20 +292,17 @@ export const addBlockedSite = async (userId, siteData) => {
 
 export const getBlockedSites = async (userId, includeInactive = false) => {
   try {
-    console.log("🔍 Attempting to get blocked sites for:", userId);
-    
     let q;
     if (includeInactive) {
-      // Get all sites (active and inactive)
       q = query(
         collection(db, 'blocked_sites'),
         where('user_id', '==', userId),
       );
     } else {
-      // Get only active sites (default behavior)
       q = query(
         collection(db, 'blocked_sites'),
-        where('user_id', '==', userId)
+        where('user_id', '==', userId),
+        where('is_active', '!=', false)  
       );
     }
     
@@ -380,7 +322,6 @@ export const getBlockedSites = async (userId, includeInactive = false) => {
 
 export const updateBlockedSite = async (siteId, siteData) => {
   try {
-    // Convert camelCase to snake_case for consistency with database schema
     const updateData = {
       ...siteData,
       is_active: siteData.isActive,
@@ -389,7 +330,6 @@ export const updateBlockedSite = async (siteId, siteData) => {
 
     await updateDoc(doc(db, 'blocked_sites', siteId), updateData);
 
-    // Return updated document
     const updatedDoc = await getDoc(doc(db, 'blocked_sites', siteId));
     return { id: updatedDoc.id, ...updatedDoc.data() };
   } catch (error) {
@@ -400,7 +340,6 @@ export const updateBlockedSite = async (siteId, siteData) => {
 
 export const removeBlockedSite = async (siteId) => {
   try {
-    // Get the site first to get the user_id
     const siteDoc = await getDoc(doc(db, 'blocked_sites', siteId));
     if (!siteDoc.exists()) {
       throw new Error('Site not found');
@@ -408,15 +347,13 @@ export const removeBlockedSite = async (siteId) => {
     
     const siteData = siteDoc.data();
     
-    // Soft delete: set is_active to false instead of deleting document
     await updateDoc(doc(db, 'blocked_sites', siteId), {
       is_active: false,
       updated_at: serverTimestamp(),
     });
     
-    // Update user's total blocked sites count (count only active sites)
     if (siteData?.user_id) {
-      await updateUserBlockedSitesCount(siteData.user_id);
+      await updateUserBlockedSitesCount(siteData.user_id, -1);
     }
     
     return true;
@@ -426,68 +363,62 @@ export const removeBlockedSite = async (siteId) => {
   }
 };
 
-// Get all blocked sites including inactive ones (for admin/debugging)
-export const getAllBlockedSites = async (userId) => {
-  return await getBlockedSites(userId, true);
-};
+// export const getAllBlockedSites = async (userId) => {
+//   return await getBlockedSites(userId, true);
+// };
 
-// Get blocked site by domain
-export const getBlockedSiteByDomain = async (userId, domain) => {
-  try {
-    const normalizedDomain = normalizeDomain(domain);
-    const documentId = `${userId}_${normalizedDomain}`;
+// export const getBlockedSiteByDomain = async (userId, domain) => {
+//   try {
+//     const normalizedDomain = normalizeDomain(domain);
+//     const documentId = `${userId}_${normalizedDomain}`;
     
-    const siteDoc = await getDoc(doc(db, 'blocked_sites', documentId));
-    if (siteDoc.exists()) {
-      return { id: siteDoc.id, ...siteDoc.data() };
-    }
-    return null;
-  } catch (error) {
-    console.error("Error in getBlockedSiteByDomain:", error);
-    return null;
-  }
-};
+//     const siteDoc = await getDoc(doc(db, 'blocked_sites', documentId));
+//     if (siteDoc.exists()) {
+//       return { id: siteDoc.id, ...siteDoc.data() };
+//     }
+//     return null;
+//   } catch (error) {
+//     console.error("Error in getBlockedSiteByDomain:", error);
+//     return null;
+//   }
+// };
 
-// Update site usage analytics
-export const updateSiteUsageAnalytics = async (userId, domain, timeSpentSeconds) => {
-  try {
-    const normalizedDomain = normalizeDomain(domain);
-    const documentId = `${userId}_${normalizedDomain}`;
+// export const updateSiteUsageAnalytics = async (userId, domain, timeSpentSeconds) => {
+//   try {
+//     const normalizedDomain = normalizeDomain(domain);
+//     const documentId = `${userId}_${normalizedDomain}`;
     
-    const siteDoc = await getDoc(doc(db, 'blocked_sites', documentId));
-    if (!siteDoc.exists()) {
-      console.warn(`Site ${domain} not found for user ${userId}`);
-      return null;
-    }
+//     const siteDoc = await getDoc(doc(db, 'blocked_sites', documentId));
+//     if (!siteDoc.exists()) {
+//       console.warn(`Site ${domain} not found for user ${userId}`);
+//       return null;
+//     }
 
-    const siteData = siteDoc.data();
-    const today = new Date().toISOString().split('T')[0];
+//     const siteData = siteDoc.data();
+//     const today = new Date().toISOString().split('T')[0];
     
-    // Update daily usage
-    const dailyUsage = siteData.daily_usage || {};
-    dailyUsage[today] = (dailyUsage[today] || 0) + timeSpentSeconds;
+//     const dailyUsage = siteData.daily_usage || {};
+//     dailyUsage[today] = (dailyUsage[today] || 0) + timeSpentSeconds;
     
-    // Update other analytics
-    const updateData = {
-      daily_usage: dailyUsage,
-      total_time_spent: (siteData.total_time_spent || 0) + timeSpentSeconds,
-      access_count: (siteData.access_count || 0) + 1,
-      last_accessed: serverTimestamp(),
-      updated_at: serverTimestamp(),
-    };
+//     const updateData = {
+//       daily_usage: dailyUsage,
+//       total_time_spent: (siteData.total_time_spent || 0) + timeSpentSeconds,
+//       access_count: (siteData.access_count || 0) + 1,
+//       last_accessed: serverTimestamp(),
+//       updated_at: serverTimestamp(),
+//     };
 
-    await updateDoc(doc(db, 'blocked_sites', documentId), updateData);
+//     await updateDoc(doc(db, 'blocked_sites', documentId), updateData);
     
-    return updateData;
-  } catch (error) {
-    console.error("Error updating site usage analytics:", error);
-    throw error;
-  }
-};
+//     return updateData;
+//   } catch (error) {
+//     console.error("Error updating site usage analytics:", error);
+//     throw error;
+//   }
+// };
 
 
 
-// Subscription functions
 export const getUserSubscription = async (userId) => {
   try {
     const subscriptionDoc = await getDoc(doc(db, 'subscriptions', userId));
@@ -504,22 +435,19 @@ export const getUserSubscription = async (userId) => {
 };
 
 export const createSubscription = async (userId, plan) => {
-  try {
-    console.log(`📝 Creating subscription for user ${userId} with plan: ${plan}`);
-    
+  try { 
     const subscriptionDoc = {
       user_id: userId,
       plan: plan,
       status: 'active',
       started_at: serverTimestamp(),
-      expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year
+      expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
       created_at: serverTimestamp(),
       updated_at: serverTimestamp(),
     };
 
     await setDoc(doc(db, 'subscriptions', userId), subscriptionDoc);
     
-    console.log(`✅ Subscription document created for user ${userId}`);
     return { id: userId, ...subscriptionDoc };
   } catch (error) {
     console.error("Error in createSubscription:", error);
@@ -529,36 +457,53 @@ export const createSubscription = async (userId, plan) => {
 
 export const updateUserSubscription = async (userId, plan) => {
   try {
-    console.log(`🔄 Updating subscription for user ${userId} to ${plan} plan`);
     
-    // Get current plan for comparison
     const currentUser = await getUserProfile(userId);
     const previousPlan = currentUser?.plan || 'free';
     
-    // First check if subscription exists
     const existingSubscription = await getUserSubscription(userId);
     
+    // Calculate plan price
+    let planPrice = 0;
+    if (plan === 'pro') {
+      planPrice = 9.99;
+    } else if (plan === 'elite') {
+      planPrice = 19.99;
+    }
+    
     if (existingSubscription) {
-      // Update existing subscription
       const updateData = {
         plan: plan,
         status: 'active',
         updated_at: serverTimestamp(),
-        expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year from now
+        expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
       };
       
       await updateDoc(doc(db, 'subscriptions', userId), updateData);
       
-      // Update user profile with new plan
       await updateDoc(doc(db, 'users', userId), {
         plan: plan,
         updated_at: serverTimestamp(),
       });
       
-      // Grant full plan benefits (like buying the package)
+      // Add to plan_purchases collection
+      if (planPrice > 0) {
+        await addDoc(collection(db, 'plan_purchases'), {
+          user_id: userId,
+          plan: plan,
+          amount_paid: planPrice,
+          previous_plan: previousPlan,
+          purchase_date: serverTimestamp(),
+          transaction_id: `plan_${Date.now()}_${userId.substring(0, 8)}`,
+          created_at: serverTimestamp()
+        });
+        
+        // Update revenue stats
+        await updateRevenueStats(planPrice, plan);
+      }
+      
       await grantPlanBenefits(userId, plan, previousPlan, "Website plan upgrade");
       
-      // Log activity for user about plan change
       const planNames = { 
         free: 'Free', 
         pro: 'Pro', 
@@ -581,27 +526,38 @@ export const updateUserSubscription = async (userId, plan) => {
           newPlan: plan,
           upgradedBy: 'user',
           upgradeSource: 'website',
-          benefits: benefitsText
+          benefits: benefitsText,
+          amount_paid: planPrice
         }
       });
-      
-      console.log("✅ Subscription updated successfully with full plan benefits granted");
+      toast.success("Plan upgraded successfully");
       return { id: userId, ...existingSubscription, ...updateData };
     } else {
-      // Create new subscription if doesn't exist
-      console.log(`📝 Creating new subscription for user ${userId}`);
       const newSubscription = await createSubscription(userId, plan);
       
-      // Update user profile with new plan
+      // Add to plan_purchases collection
+      if (planPrice > 0) {
+        await addDoc(collection(db, 'plan_purchases'), {
+          user_id: userId,
+          plan: plan,
+          amount_paid: planPrice,
+          previous_plan: previousPlan,
+          purchase_date: serverTimestamp(),
+          transaction_id: `plan_${Date.now()}_${userId.substring(0, 8)}`,
+          created_at: serverTimestamp()
+        });
+        
+        // Update revenue stats
+        await updateRevenueStats(planPrice, plan);
+      }
+      
       await updateDoc(doc(db, 'users', userId), {
         plan: plan,
         updated_at: serverTimestamp(),
       });
       
-      // Grant full plan benefits for new subscription
       await grantPlanBenefits(userId, plan, previousPlan, "New plan subscription");
       
-      // Log activity for user about plan change
       const planNames = { 
         free: 'Free', 
         pro: 'Pro', 
@@ -624,11 +580,11 @@ export const updateUserSubscription = async (userId, plan) => {
           newPlan: plan,
           upgradedBy: 'user',
           upgradeSource: 'website',
-          benefits: benefitsText
+          benefits: benefitsText,
+          amount_paid: planPrice
         }
       });
-      
-      console.log("✅ New subscription created successfully with full plan benefits granted");
+      toast.success("Plan subscribed successfully");
       return newSubscription;
     }
   } catch (error) {
@@ -637,7 +593,6 @@ export const updateUserSubscription = async (userId, plan) => {
   }
 };
 
-// Override Management Functions
 export const getUserOverrideStats = async (userId) => {
   try {
     const now = new Date();
@@ -646,21 +601,17 @@ export const getUserOverrideStats = async (userId) => {
     const overrideDoc = await getDoc(doc(db, 'user_overrides', userId));
     
     if (!overrideDoc.exists()) {
-      // Create initial override document
       const initialData = {
         user_id: userId,
-        // Override tracking
-        overrides: 0,                    // Current override balance (all overrides available)
-        total_overrides_purchased: 0,   // Total overrides ever purchased (for history)
-        overrides_used_total: 0,        // Total overrides ever used (for history)
-        // Monthly usage tracking
+        overrides: 0,
+        total_overrides_purchased: 0,
+        overrides_used_total: 0,
         monthly_stats: {
           [currentMonth]: {
             overrides_used: 0,
             total_spent_this_month: 0
           }
         },
-        // Overall stats
         total_spent: 0,
         created_at: serverTimestamp(),
         updated_at: serverTimestamp()
@@ -672,7 +623,6 @@ export const getUserOverrideStats = async (userId) => {
     
     const data = overrideDoc.data();
     
-    // Ensure current month exists
     if (!data.monthly_stats || !data.monthly_stats[currentMonth]) {
       const updatedMonthlyStats = {
         ...data.monthly_stats,
@@ -685,7 +635,6 @@ export const getUserOverrideStats = async (userId) => {
       
       await updateDoc(doc(db, 'user_overrides', userId), {
         monthly_stats: updatedMonthlyStats,
-        // Ensure override fields exist - preserve unlimited (-1) values
         overrides: data.overrides !== undefined ? data.overrides : (data.purchased_overrides || data.override_credits || 0),
         overrides_left: data.overrides_left !== undefined ? data.overrides_left : data.overrides,
         total_overrides_purchased: data.total_overrides_purchased || data.credits_purchased_total || 0,
@@ -718,21 +667,15 @@ export const getUserOverrideStats = async (userId) => {
 
 
 
-// Purchase overrides - add to existing purchased overrides
-export const purchaseOverrides = async (userId, quantity, paymentData) => {
+export const purchaseOverrides = async (userId, quantity, amount) => {
   try {
     const pricePerOverride = 1.99;
     const totalPrice = quantity * pricePerOverride;
     
-    console.log(`💳 Processing override purchase: ${quantity} overrides for $${totalPrice}`);
-    
-    // Simulate payment processing
     await new Promise(resolve => setTimeout(resolve, 1500));
     
-    // Get current override stats
     const overrideStats = await getUserOverrideStats(userId);
     
-    // Update override balance
     const newOverrideBalance = (overrideStats.overrides || 0) + quantity;
     const newTotalPurchased = (overrideStats.total_overrides_purchased || 0) + quantity;
     
@@ -743,14 +686,13 @@ export const purchaseOverrides = async (userId, quantity, paymentData) => {
       updated_at: serverTimestamp()
     });
     
-    // Create purchase history entry
     const purchaseHistoryData = {
       user_id: userId,
       overrides_purchased: quantity,
       amount_paid: totalPrice,
       price_per_override: pricePerOverride,
       transaction_id: `ovr_buy_${Date.now()}_${userId.substring(0, 8)}`,
-      payment_method: paymentData.paymentMethod || 'card',
+      payment_method: 'card',
       timestamp: serverTimestamp(),
       created_at: serverTimestamp()
     };
@@ -758,6 +700,8 @@ export const purchaseOverrides = async (userId, quantity, paymentData) => {
     await addDoc(collection(db, 'override_purchases'), purchaseHistoryData);
     
     console.log(`✅ Overrides purchased successfully: ${quantity} overrides`);
+    
+    await updateRevenueStats(totalPrice);
     
     return {
       success: true,
@@ -774,36 +718,26 @@ export const purchaseOverrides = async (userId, quantity, paymentData) => {
   }
 };
 
-// Enhanced statistics functions
 export const getUserStatistics = async (userId) => {
   try {
-    console.log("📊 Calculating user statistics for:", userId);
-    
-    // Get all user data in parallel
     const [userProfile, blockedSites, subscription] = await Promise.all([
       getUserProfile(userId),
       getBlockedSites(userId),
       getUserSubscription(userId)
     ]);
 
-    // Calculate comprehensive stats
-    const totalSites = blockedSites.length; // Live count of active tracking sites
-    const activeSites = blockedSites.length; // All returned sites are active (getBlockedSites filters for is_active == true)
+    const totalSites = blockedSites.length;
+    const activeSites = blockedSites.length;
     const currentlyBlockedSites = blockedSites.filter(site => site.is_blocked === true).length;
     const currentlyUnblockedSites = blockedSites.filter(site => site.is_blocked !== true).length;
     
-    // Time calculations
     const totalTimeSpent = blockedSites.reduce((sum, site) => sum + (site.total_time_spent || 0), 0);
     const todayTimeSpent = blockedSites.reduce((sum, site) => sum + (site.time_spent_today || 0), 0);
     const totalTimeSaved = userProfile?.total_time_saved || 0;
     
-    // Access counts
     const totalAccesses = blockedSites.reduce((sum, site) => sum + (site.access_count || 0), 0);
     const averageTimePerSite = totalSites > 0 ? Math.round(totalTimeSpent / totalSites) : 0;
     
-
-    
-    // Recent activity (sites accessed in last 7 days)
     const lastWeek = new Date();
     lastWeek.setDate(lastWeek.getDate() - 7);
     const recentActivity = blockedSites.filter(site => 
@@ -811,38 +745,31 @@ export const getUserStatistics = async (userId) => {
     ).length;
 
     const stats = {
-      // Core stats
-      totalSitesBlocked: totalSites, // Total active tracking sites
-      activeSitesBlocked: activeSites, // Same as total (all returned sites are active)
-      currentlyBlockedSites: currentlyBlockedSites, // Sites currently blocked due to time limit
-      currentlyUnblockedSites: currentlyUnblockedSites, // Sites not currently blocked
+      totalSitesBlocked: totalSites,
+      activeSitesBlocked: activeSites,
+      currentlyBlockedSites: currentlyBlockedSites,
+      currentlyUnblockedSites: currentlyUnblockedSites,
       
-      // Time stats (in minutes)
       totalTimeSpent: totalTimeSpent,
       todayTimeSpent: todayTimeSpent,
       totalTimeSaved: totalTimeSaved,
       averageTimePerSite: averageTimePerSite,
       
-      // Activity stats
       totalAccesses: totalAccesses,
       recentActivity: recentActivity,
       
-      // Subscription info
       userPlan: subscription?.plan || userProfile?.plan || 'free',
       subscriptionStatus: subscription?.status || 'active',
       
-      // Meta
       lastUpdated: new Date(),
       hasData: totalSites > 0
     };
 
-    console.log("✅ User statistics calculated:", stats);
     return stats;
     
   } catch (error) {
     console.error("❌ Error calculating user statistics:", error);
     
-    // Return default stats on error
     return {
       totalSitesBlocked: 0,
       activeSitesBlocked: 0,
@@ -862,58 +789,46 @@ export const getUserStatistics = async (userId) => {
   }
 };
 
-// Get dashboard summary data
 export const getDashboardData = async (userId) => {
   try {
-    console.log("📈 Loading dashboard data for:", userId);
-    
-    // Fetch data directly to avoid calling getUserStatistics (prevents redundant calls)
     const [userProfile, blockedSites, subscription] = await Promise.all([
       getUserProfile(userId),
       getBlockedSites(userId),
       getUserSubscription(userId)
     ]);
     
-    console.log("User Profile in getDashboardData:", userProfile);
-    // Calculate stats locally - use actual active sites count (not stored count which may be stale)
-    const totalSites = blockedSites.length; // Live count of active tracking sites
-    console.log(blockedSites, "\nFrom getDashboardData")
-    const activeSites = blockedSites.length; // All returned sites are active (getBlockedSites filters for is_active == true)
+    const totalSites = blockedSites.length;
+    const activeSites = blockedSites.length;
     const totalTimeSpent = blockedSites.reduce((sum, site) => sum + (site.total_time_spent || 0), 0);
     const todayTimeSpent = blockedSites.reduce((sum, site) => sum + (site.time_spent_today || 0), 0);
     const totalTimeSaved = userProfile?.total_time_saved || 0;
     const totalAccesses = blockedSites.reduce((sum, site) => sum + (site.access_count || 0), 0);
 
-    // Process blocked sites for dashboard display
     const sitesPreview = blockedSites.slice(0, 5).map(site => ({
       id: site.id,
       name: site.name || site.url,
       url: site.url,
-      isActive: site.is_active !== false, // Use is_active field for tracking status
-      isCurrentlyBlocked: site.is_blocked === true, // Separate field for current block status
+      isActive: site.is_active !== false,
+      isCurrentlyBlocked: site.is_blocked === true,
       timeLimit: site.time_limit || 30,
       timeSpent: site.total_time_spent || 0,
       lastAccessed: site.last_accessed
     }));
 
     const dashboardData = {
-      // Stats for cards
       stats: {
         sitesBlocked: totalSites,
-        timeSaved: Math.round(totalTimeSaved / 60 * 10) / 10, // Convert to hours
+        timeSaved: Math.round(totalTimeSaved / 60 * 10) / 10,
         activeSites: activeSites,
-        todayTime: Math.round(todayTimeSpent) // In minutes
+        todayTime: Math.round(todayTimeSpent)
       },
-      
-      // Additional insights
       insights: {
         averagePerSite: Math.round(totalTimeSpent / (totalSites || 1)),
         totalAccesses: totalAccesses,
-        recentActivity: 0, // Simplified for now
-        categories: {} // Simplified for now
+        recentActivity: 0,
+        categories: {}
       },
       
-      // Site data
       sites: {
         total: totalSites,
         active: activeSites,
@@ -921,7 +836,6 @@ export const getDashboardData = async (userId) => {
         hasData: totalSites > 0
       },
       
-      // Subscription data
       subscription: {
         plan: subscription?.plan || 'free',
         status: subscription?.status || 'active',
@@ -931,7 +845,6 @@ export const getDashboardData = async (userId) => {
       lastUpdated: new Date()
     };
 
-    console.log("✅ Dashboard data loaded:", dashboardData);
     return dashboardData;
     
   } catch (error) {
@@ -940,24 +853,6 @@ export const getDashboardData = async (userId) => {
   }
 };
 
-// Update user's total time saved in database
-export const updateUserTimeSaved = async (userId, minutesSaved) => {
-  try {
-    const userProfile = await getUserProfile(userId);
-    const newTimeSaved = (userProfile?.total_time_saved || 0) + minutesSaved;
-    
-    await updateUserProfile(userId, {
-      total_time_saved: newTimeSaved
-    });
-    
-    return newTimeSaved;
-  } catch (error) {
-    console.error("Error updating time saved:", error);
-    throw error;
-  }
-};
-
-// Helper function to get features by plan
 const getFeaturesByPlan = (plan) => {
   const features = {
     free: {
@@ -994,9 +889,7 @@ const getFeaturesByPlan = (plan) => {
   return features[plan] || features.free;
 };
 
-// Time Tracking Functions for Chrome Extension Integration
 
-// Update time spent and remaining time for a site
 export const updateSiteTimeTracking = async (userId, domain, timeSpentSeconds) => {
   try {
     const normalizedDomain = normalizeDomain(domain);
@@ -1010,25 +903,20 @@ export const updateSiteTimeTracking = async (userId, domain, timeSpentSeconds) =
     const siteData = siteDoc.data();
     const today = new Date().toISOString().split('T')[0];
     
-    // Check if we need to reset for a new day
     let timeSpentToday = siteData.time_spent_today || 0;
     let timeRemaining = siteData.time_remaining || siteData.time_limit;
     
     if (siteData.last_reset_date !== today) {
-      // New day - reset counters
       timeSpentToday = 0;
       timeRemaining = siteData.time_limit;
     }
     
-    // Update time spent (timeSpentSeconds is already in seconds)
     timeSpentToday += timeSpentSeconds;
     timeRemaining = Math.max(0, siteData.time_limit - timeSpentToday);
     
-    // Determine if site should be blocked
     const isBlocked = timeRemaining <= 0;
     const blockedUntil = isBlocked ? getNextMidnight().toISOString() : null;
     
-    // Update daily usage analytics
     const dailyUsage = siteData.daily_usage || {};
     dailyUsage[today] = (dailyUsage[today] || 0) + timeSpentSeconds;
     
@@ -1044,9 +932,7 @@ export const updateSiteTimeTracking = async (userId, domain, timeSpentSeconds) =
       last_accessed: serverTimestamp(),
       updated_at: serverTimestamp(),
     });
-    
-    console.log(`⏱️ Updated site ${documentId}: ${Math.floor(timeRemaining/60)}min remaining`);
-    
+        
     return {
       timeSpentToday,
       timeRemaining,
@@ -1059,7 +945,6 @@ export const updateSiteTimeTracking = async (userId, domain, timeSpentSeconds) =
   }
 };
 
-// Get current time status for all user's sites (for Chrome extension)
 export const getUserSitesTimeStatus = async (userId) => {
   try {
     const q = query(
@@ -1075,12 +960,10 @@ export const getUserSitesTimeStatus = async (userId) => {
     querySnapshot.forEach((doc) => {
       const data = doc.data();
       
-      // Check if we need to reset for new day
       let timeRemaining = data.time_remaining || data.time_limit;
       let isBlocked = data.is_blocked || false;
       
       if (data.last_reset_date !== today) {
-        // New day - reset
         timeRemaining = data.time_limit;
         isBlocked = false;
       }
@@ -1105,7 +988,6 @@ export const getUserSitesTimeStatus = async (userId) => {
   }
 };
 
-// Reset all sites for a new day (can be called by cron job or manually)
 export const resetDailySiteTimes = async (userId) => {
   try {
     const q = query(
@@ -1126,8 +1008,7 @@ export const resetDailySiteTimes = async (userId) => {
             time_spent_today: 0,
             is_blocked: false,
             blocked_until: null,
-            last_reset_date: today,
-            // Reset override status for new day
+            last_reset_date: today, 
             override_active: false,
             override_initiated_by: null,
             override_initiated_at: null,
@@ -1149,7 +1030,6 @@ export const resetDailySiteTimes = async (userId) => {
   }
 };
 
-// Helper function to get next midnight
 const getNextMidnight = () => {
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -1157,216 +1037,188 @@ const getNextMidnight = () => {
   return tomorrow;
 };
 
-// Grant monthly free overrides based on subscription plan
-export const grantMonthlyFreeOverrides = async (userId) => {
-  try {
-    const subscription = await getUserSubscription(userId);
-    const userPlan = subscription?.plan || 'free';
+// export const grantMonthlyFreeOverrides = async (userId) => {
+//   try {
+//     const subscription = await getUserSubscription(userId);
+//     const userPlan = subscription?.plan || 'free';
     
-    // Only Pro plan gets monthly free overrides (Elite has unlimited, Free gets none)
-    if (userPlan !== 'pro') {
-      return { success: true, message: 'No monthly overrides for this plan' };
-    }
+//     if (userPlan !== 'pro') {
+//       return { success: true, message: 'No monthly overrides for this plan' };
+//     }
     
-    const now = new Date();
-    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+//     const now = new Date();
+//     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     
-    const overrideStats = await getUserOverrideStats(userId);
-    const monthlyStats = overrideStats.monthly_stats?.[currentMonth] || {};
+//     const overrideStats = await getUserOverrideStats(userId);
+//     const monthlyStats = overrideStats.monthly_stats?.[currentMonth] || {};
     
-    // Check if monthly overrides already granted
-    if (monthlyStats.monthly_grant_given) {
-      return { success: true, message: 'Monthly overrides already granted' };
-    }
+//     if (monthlyStats.monthly_grant_given) {
+//       return { success: true, message: 'Monthly overrides already granted' };
+//     }
     
-    const freeOverridesToGrant = 15;
-    const newOverrideBalance = (overrideStats.overrides || 0) + freeOverridesToGrant;
-    const newTotalOverrides = (overrideStats.total_overrides_purchased || 0) + freeOverridesToGrant;
+//     const freeOverridesToGrant = 15;
+//     const newOverrideBalance = (overrideStats.overrides || 0) + freeOverridesToGrant;
+//     const newTotalOverrides = (overrideStats.total_overrides_purchased || 0) + freeOverridesToGrant;
     
-    await updateDoc(doc(db, 'user_overrides', userId), {
-      overrides: newOverrideBalance,
-      total_overrides_purchased: newTotalOverrides, // Track free + purchased combined
-      monthly_stats: {
-        ...overrideStats.monthly_stats,
-        [currentMonth]: {
-          ...monthlyStats,
-          monthly_grant_given: true,
-          free_overrides_granted: freeOverridesToGrant,
-          grant_date: serverTimestamp()
-        }
-      },
-      updated_at: serverTimestamp()
-    });
+//     await updateDoc(doc(db, 'user_overrides', userId), {
+//       overrides: newOverrideBalance,
+//       total_overrides_purchased: newTotalOverrides,
+//       monthly_stats: {
+//         ...overrideStats.monthly_stats,
+//         [currentMonth]: {
+//           ...monthlyStats,
+//           monthly_grant_given: true,
+//           free_overrides_granted: freeOverridesToGrant,
+//           grant_date: serverTimestamp()
+//         }
+//       },
+//       updated_at: serverTimestamp()
+//     });
     
-    console.log(`✅ Granted ${freeOverridesToGrant} monthly overrides to Pro user ${userId}`);
+//     console.log(`✅ Granted ${freeOverridesToGrant} monthly overrides to Pro user ${userId}`);
     
-    return {
-      success: true,
-      overridesGranted: freeOverridesToGrant,
-      newBalance: newOverrideBalance,
-      message: `Granted ${freeOverridesToGrant} monthly overrides for Pro plan`
-    };
+//     return {
+//       success: true,
+//       overridesGranted: freeOverridesToGrant,
+//       newBalance: newOverrideBalance,
+//       message: `Granted ${freeOverridesToGrant} monthly overrides for Pro plan`
+//     };
     
-  } catch (error) {
-    console.error('Error granting monthly free overrides:', error);
-    throw error;
-  }
-};
+//   } catch (error) {
+//     console.error('Error granting monthly free overrides:', error);
+//     throw error;
+//   }
+// };
 
-// Migration function to convert old schema to new schema
-export const migrateBlockedSitesToNewSchema = async (userId) => {
-  try {
-    console.log(`🔄 Starting migration for user ${userId}`);
+// export const migrateBlockedSitesToNewSchema = async (userId) => {
+//   try { 
+//     const q = query(
+//       collection(db, 'blocked_sites'),
+//       where('user_id', '==', userId)
+//     );
     
-    // Get all existing blocked sites
-    const q = query(
-      collection(db, 'blocked_sites'),
-      where('user_id', '==', userId)
-    );
+//     const querySnapshot = await getDocs(q);
+//     const migrationTasks = [];
+//     const sitesToDelete = [];
     
-    const querySnapshot = await getDocs(q);
-    const migrationTasks = [];
-    const sitesToDelete = [];
-    
-    for (const docSnapshot of querySnapshot.docs) {
-      const oldData = docSnapshot.data();
-      const oldDocId = docSnapshot.id;
+//     for (const docSnapshot of querySnapshot.docs) {
+//       const oldData = docSnapshot.data();
+//       const oldDocId = docSnapshot.id;
       
-      // Generate new document ID
-      const normalizedDomain = normalizeDomain(oldData.url);
-      const newDocId = `${userId}_${normalizedDomain}`;
+//       const normalizedDomain = normalizeDomain(oldData.url);
+//       const newDocId = `${userId}_${normalizedDomain}`;
       
-      // Check if new document already exists
-      const newDocRef = doc(db, 'blocked_sites', newDocId);
-      const newDocSnapshot = await getDoc(newDocRef);
+//       const newDocRef = doc(db, 'blocked_sites', newDocId);
+//       const newDocSnapshot = await getDoc(newDocRef);
       
-      if (!newDocSnapshot.exists()) {
-        // Create new document with enhanced schema
-        const newSiteDoc = {
-          user_id: userId,
-          url: normalizedDomain,
-          name: oldData.name || normalizedDomain,
+//       if (!newDocSnapshot.exists()) {
+//         const newSiteDoc = {
+//           user_id: userId,
+//           url: normalizedDomain,
+//           name: oldData.name || normalizedDomain,
           
-          // Time Management (preserve existing values)
-          time_limit: oldData.time_limit || 1800,
-          time_remaining: oldData.time_remaining || oldData.time_limit || 1800,
-          time_spent_today: oldData.time_spent_today || 0,
-          last_reset_date: oldData.last_reset_date || new Date().toISOString().split('T')[0],
+//           time_limit: oldData.time_limit || 1800,
+//           time_remaining: oldData.time_remaining || oldData.time_limit || 1800,
+//           time_spent_today: oldData.time_spent_today || 0,
+//           last_reset_date: oldData.last_reset_date || new Date().toISOString().split('T')[0],
           
-          // Status Fields (preserve existing values)
-          is_blocked: oldData.is_blocked || false,
-          is_active: oldData.is_active !== false,
-          blocked_until: oldData.blocked_until || null,
+//           is_blocked: oldData.is_blocked || false,
+//           is_active: oldData.is_active !== false,
+//           blocked_until: oldData.blocked_until || null,
           
-          // Scheduling & Advanced Features (preserve existing)
-          schedule: oldData.schedule || null,
+//           schedule: oldData.schedule || null,
           
-          // Usage Analytics (initialize new fields)
-          daily_usage: oldData.daily_usage || {},
-          total_time_spent: oldData.total_time_spent || 0,
-          access_count: oldData.access_count || 0,
-          last_accessed: oldData.last_accessed || null,
+//           daily_usage: oldData.daily_usage || {},
+//           total_time_spent: oldData.total_time_spent || 0,
+//           access_count: oldData.access_count || 0,
+//           last_accessed: oldData.last_accessed || null,
           
-          // Override System (initialize new fields)
-          override_active: oldData.override_active || false,
-          override_initiated_by: oldData.override_initiated_by || null,
-          override_initiated_at: oldData.override_initiated_at || null,
+//           override_active: oldData.override_active || false,
+//           override_initiated_by: oldData.override_initiated_by || null,
+//           override_initiated_at: oldData.override_initiated_at || null,
           
-          // Timestamps (preserve existing or use current)
-          created_at: oldData.created_at || serverTimestamp(),
-          updated_at: serverTimestamp(),
-        };
+//           created_at: oldData.created_at || serverTimestamp(),
+//           updated_at: serverTimestamp(),
+//         };
         
-        migrationTasks.push(setDoc(newDocRef, newSiteDoc));
-        sitesToDelete.push(oldDocId);
+//         migrationTasks.push(setDoc(newDocRef, newSiteDoc));
+//         sitesToDelete.push(oldDocId);
         
-        console.log(`📝 Migrating: ${oldData.url} -> ${newDocId}`);
-      } else {
-        console.log(`⚠️ Document already exists with new ID: ${newDocId}, skipping migration for ${oldDocId}`);
-        // Still add to delete list if it's a different document
-        if (oldDocId !== newDocId) {
-          sitesToDelete.push(oldDocId);
-        }
-      }
-    }
+//         console.log(`📝 Migrating: ${oldData.url} -> ${newDocId}`);
+//       } else {
+//         console.log(`⚠️ Document already exists with new ID: ${newDocId}, skipping migration for ${oldDocId}`);
+//         if (oldDocId !== newDocId) {
+//           sitesToDelete.push(oldDocId);
+//         }
+//       }
+//     }
     
-    // Execute all migrations
-    if (migrationTasks.length > 0) {
-      await Promise.all(migrationTasks);
-      console.log(`✅ Created ${migrationTasks.length} new documents`);
-    }
+//     if (migrationTasks.length > 0) {
+//       await Promise.all(migrationTasks);
+//       console.log(`✅ Created ${migrationTasks.length} new documents`);
+//     }
     
-    // Mark old documents as inactive instead of deleting (soft delete approach)
-    const deactivateOldTasks = sitesToDelete
-      .filter(oldId => !oldId.includes('_')) // Only deactivate if it doesn't already have the new format
-      .map(oldId => updateDoc(doc(db, 'blocked_sites', oldId), {
-        is_active: false,
-        updated_at: serverTimestamp(),
-      }));
+//     const deactivateOldTasks = sitesToDelete
+//       .filter(oldId => !oldId.includes('_'))
+//       .map(oldId => updateDoc(doc(db, 'blocked_sites', oldId), {
+//         is_active: false,
+//         updated_at: serverTimestamp(),
+//       }));
     
-    if (deactivateOldTasks.length > 0) {
-      await Promise.all(deactivateOldTasks);
-      console.log(`🚫 Deactivated ${deactivateOldTasks.length} old documents (soft delete)`);
-    }
+//     if (deactivateOldTasks.length > 0) {
+//       await Promise.all(deactivateOldTasks);
+//       console.log(`🚫 Deactivated ${deactivateOldTasks.length} old documents (soft delete)`);
+//     }
     
-    console.log(`✅ Migration completed for user ${userId}`);
-    return {
-      migrated: migrationTasks.length,
-      deactivated: deactivateOldTasks.length,
-      skipped: querySnapshot.size - migrationTasks.length - deactivateOldTasks.length
-    };
+//     console.log(`✅ Migration completed for user ${userId}`);
+//     return {
+//       migrated: migrationTasks.length,
+//       deactivated: deactivateOldTasks.length,
+//       skipped: querySnapshot.size - migrationTasks.length - deactivateOldTasks.length
+//     };
     
-  } catch (error) {
-    console.error('Error during migration:', error);
-    throw error;
-  }
-};
+//   } catch (error) {
+//     console.error('Error during migration:', error);
+//     throw error;
+//   }
+// };
 
-// Helper function to check if a user needs migration
-export const checkIfUserNeedsMigration = async (userId) => {
-  try {
-    const q = query(
-      collection(db, 'blocked_sites'),
-      where('user_id', '==', userId)
-    );
+// export const checkIfUserNeedsMigration = async (userId) => {
+//   try {
+//     const q = query(
+//       collection(db, 'blocked_sites'),
+//       where('user_id', '==', userId)
+//     );
     
-    const querySnapshot = await getDocs(q);
-    let needsMigration = false;
+//     const querySnapshot = await getDocs(q);
+//     let needsMigration = false;
     
-    querySnapshot.forEach((doc) => {
-      const docId = doc.id;
-      const data = doc.data();
+//     querySnapshot.forEach((doc) => {
+//       const docId = doc.id;
+//       const data = doc.data();
       
-      // Check if document ID follows new format
-      const expectedId = `${userId}_${normalizeDomain(data.url)}`;
-      if (docId !== expectedId) {
-        needsMigration = true;
-      }
+//       const expectedId = `${userId}_${normalizeDomain(data.url)}`;
+//       if (docId !== expectedId) {
+//         needsMigration = true;
+//       }
       
-      // Check if new fields are missing
-      if (!data.hasOwnProperty('daily_usage') || 
-          !data.hasOwnProperty('total_time_spent') || 
-          !data.hasOwnProperty('access_count') || 
-          !data.hasOwnProperty('override_active')) {
-        needsMigration = true;
-      }
-    });
+//       if (!data.hasOwnProperty('daily_usage') || 
+//           !data.hasOwnProperty('total_time_spent') || 
+//           !data.hasOwnProperty('access_count') || 
+//           !data.hasOwnProperty('override_active')) {
+//         needsMigration = true;
+//       }
+//     });
     
-    return needsMigration;
-  } catch (error) {
-    console.error('Error checking migration status:', error);
-    return false;
-  }
-};
+//     return needsMigration;
+//   } catch (error) {
+//     console.error('Error checking migration status:', error);
+//     return false;
+//   }
+// };
 
-// Analytics Functions
-
-// Get user's analytics based on their subscription plan
 export const getUserAnalytics = async (userId) => {
   try {
-    console.log("📊 Fetching user analytics for:", userId);
-    
-    // Get user profile and subscription info
     const [userProfile, subscription] = await Promise.all([
       getUserProfile(userId),
       getUserSubscription(userId)
@@ -1375,7 +1227,6 @@ export const getUserAnalytics = async (userId) => {
     const plan = subscription?.plan || userProfile?.plan || 'free';
     const planLimits = getPlanAnalyticsLimits(plan);
     
-    // Fetch analytics data based on plan limits
     const [
       siteAnalytics,
       overrideStats,
@@ -1411,7 +1262,6 @@ export const getUserAnalytics = async (userId) => {
   }
 };
 
-// Get plan-specific analytics limitations
 const getPlanAnalyticsLimits = (plan) => {
   const limits = {
     free: {
@@ -1440,7 +1290,6 @@ const getPlanAnalyticsLimits = (plan) => {
   return limits[plan] || limits.free;
 };
 
-// Get site-specific analytics
 export const getSiteAnalytics = async (userId, historyDays = 7) => {
   try {
     const sites = await getBlockedSites(userId);
@@ -1448,7 +1297,6 @@ export const getSiteAnalytics = async (userId, historyDays = 7) => {
     cutoffDate.setDate(cutoffDate.getDate() - historyDays);
     
     const siteAnalytics = sites.map(site => {
-      // Filter daily usage to plan limits
       const filteredDailyUsage = {};
       const dailyUsage = site.daily_usage || {};
       
@@ -1459,7 +1307,6 @@ export const getSiteAnalytics = async (userId, historyDays = 7) => {
         }
       });
       
-      // Calculate recent analytics
       const recentTimeSpent = Object.values(filteredDailyUsage).reduce((sum, time) => sum + time, 0);
       const averageDailyTime = recentTimeSpent / Math.max(1, Object.keys(filteredDailyUsage).length);
       
@@ -1489,8 +1336,7 @@ export const getSiteAnalytics = async (userId, historyDays = 7) => {
   }
 };
 
-// Calculate site efficiency (how well user sticks to limits)
-const calculateSiteEfficiency = (site) => {
+export const calculateSiteEfficiency = (site) => {
   if (!site.time_limit || site.time_limit === 0) return 100;
   
   const today = new Date().toISOString().split('T')[0];
@@ -1502,10 +1348,8 @@ const calculateSiteEfficiency = (site) => {
   return Math.round(efficiency);
 };
 
-// Get override analytics
 export const getOverrideAnalytics = async (userId, plan) => {
   try {
-    // Get override stats from user_overrides collection
     const overrideDoc = await getDoc(doc(db, 'user_overrides', userId));
     const overrideData = overrideDoc.exists() ? overrideDoc.data() : {};
     
@@ -1518,14 +1362,13 @@ export const getOverrideAnalytics = async (userId, plan) => {
       monthlyStats: overrideData.monthly_stats || {}
     };
     
-    // Get detailed override history for Pro+ plans
     if (plan !== 'free') {
       try {
         const historyQuery = query(
           collection(db, 'override_history'),
           where('user_id', '==', userId),
           orderBy('timestamp', 'desc'),
-          limit(50)
+          firestoreLimit(50)
         );
         
         const historySnapshot = await getDocs(historyQuery);
@@ -1555,14 +1398,12 @@ export const getOverrideAnalytics = async (userId, plan) => {
   }
 };
 
-// Get usage history analytics
 export const getUsageHistory = async (userId, historyDays = 7) => {
   try {
     const sites = await getBlockedSites(userId);
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - historyDays);
     
-    // Aggregate daily usage across all sites
     const dailyTotals = {};
     const siteBreakdown = {};
     
@@ -1572,10 +1413,8 @@ export const getUsageHistory = async (userId, historyDays = 7) => {
       Object.entries(dailyUsage).forEach(([date, timeSpent]) => {
         const usageDate = new Date(date);
         if (usageDate >= cutoffDate) {
-          // Add to daily totals
           dailyTotals[date] = (dailyTotals[date] || 0) + timeSpent;
           
-          // Add to site breakdown
           if (!siteBreakdown[site.name]) {
             siteBreakdown[site.name] = {};
           }
@@ -1584,12 +1423,10 @@ export const getUsageHistory = async (userId, historyDays = 7) => {
       });
     });
     
-    // Calculate trends
     const dates = Object.keys(dailyTotals).sort();
     const totalTime = Object.values(dailyTotals).reduce((sum, time) => sum + time, 0);
     const averageDaily = totalTime / Math.max(1, dates.length);
     
-    // Calculate trend (comparing first half vs second half of period)
     const midPoint = Math.floor(dates.length / 2);
     const firstHalf = dates.slice(0, midPoint);
     const secondHalf = dates.slice(midPoint);
@@ -1621,20 +1458,16 @@ export const getUsageHistory = async (userId, historyDays = 7) => {
   }
 };
 
-// Get time spent analytics with productivity insights
 export const getTimeSpentAnalytics = async (userId, historyDays = 7) => {
   try {
     const sites = await getBlockedSites(userId);
     
-    // Calculate total time limits vs actual usage
     const totalLimits = sites.reduce((sum, site) => sum + (site.time_limit || 0), 0);
     const totalSpentToday = sites.reduce((sum, site) => sum + (site.time_spent_today || 0), 0);
     const totalLifetimeSpent = sites.reduce((sum, site) => sum + (site.total_time_spent || 0), 0);
     
-    // Calculate productivity score (how well user stays within limits)
     const productivityScore = totalLimits > 0 ? Math.max(0, ((totalLimits - totalSpentToday) / totalLimits) * 100) : 100;
     
-    // Get most used sites
     const mostUsedSites = sites
       .filter(site => site.total_time_spent > 0)
       .sort((a, b) => b.total_time_spent - a.total_time_spent)
@@ -1645,7 +1478,6 @@ export const getTimeSpentAnalytics = async (userId, historyDays = 7) => {
         percentage: totalLifetimeSpent > 0 ? (site.total_time_spent / totalLifetimeSpent) * 100 : 0
       }));
     
-    // Calculate time saved (theoretical time that would have been wasted)
     const estimatedTimeSaved = calculateTimeSaved(sites, historyDays);
     
     return {
@@ -1674,19 +1506,16 @@ export const getTimeSpentAnalytics = async (userId, historyDays = 7) => {
   }
 };
 
-// Calculate estimated time saved by blocking
 const calculateTimeSaved = (sites, historyDays) => {
   const totalTimeSpent = sites.reduce((sum, site) => sum + (site.total_time_spent || 0), 0);
   const totalLimits = sites.reduce((sum, site) => sum + (site.time_limit || 0), 0) * historyDays;
   
-  // Estimate that users would spend 2-3x their limit without blocking
   const estimatedUnblockedUsage = totalLimits * 2.5;
   const timeSaved = Math.max(0, estimatedUnblockedUsage - totalTimeSpent);
   
   return Math.round(timeSaved);
 };
 
-// Calculate average session length
 const calculateAverageSessionLength = (sites) => {
   const totalSessions = sites.reduce((sum, site) => sum + (site.access_count || 0), 0);
   const totalTime = sites.reduce((sum, site) => sum + (site.total_time_spent || 0), 0);
@@ -1694,79 +1523,87 @@ const calculateAverageSessionLength = (sites) => {
   return totalSessions > 0 ? Math.round(totalTime / totalSessions) : 0;
 };
 
-// Calculate number of blocked sessions (when user hit time limit)
 const calculateBlockedSessions = (sites) => {
   return sites.reduce((count, site) => {
-    // Estimate blocked sessions based on how often they hit limits
     const dailyUsage = site.daily_usage || {};
     const blockedDays = Object.values(dailyUsage).filter(usage => usage >= (site.time_limit || Infinity)).length;
     return count + blockedDays;
   }, 0);
 };
 
-// Export analytics data (for Pro+ users)
-export const exportAnalyticsData = async (userId, format = 'json') => {
+// export const exportAnalyticsData = async (userId, format = 'json') => {
+//   try {
+//     const analytics = await getUserAnalytics(userId);
+    
+//     if (analytics.plan === 'free') {
+//       throw new Error('Analytics export is only available for Pro and Elite subscribers');
+//     }
+    
+//     const exportData = {
+//       exportDate: new Date().toISOString(),
+//       plan: analytics.plan,
+//       user: analytics.user,
+//       sites: analytics.sites,
+//       overrides: analytics.overrides,
+//       summary: {
+//         totalSites: analytics.sites.length,
+//         totalTimeSpent: analytics.timeSpent.totalLifetimeSpent,
+//         timeSaved: analytics.timeSpent.timeSaved,
+//         productivityScore: analytics.timeSpent.productivityScore
+//       }
+//     };
+    
+//     if (format === 'csv') {
+//       return convertAnalyticsToCSV(exportData);
+//     }
+    
+//     return exportData;
+    
+//   } catch (error) {
+//     console.error("Error exporting analytics data:", error);
+//     throw error;
+//   }
+// };
+
+// const convertAnalyticsToCSV = (data) => {
+//   const headers = Object.keys(data).join(',');
+//   const values = Object.values(data).map(val => 
+//     typeof val === 'object' ? JSON.stringify(val) : val
+//   ).join(',');
+//   return `${headers}\n${values}`;
+// };
+
+export const getAllUsers = async (lastDoc = null, limit = 10) => {
   try {
-    const analytics = await getUserAnalytics(userId);
-    
-    // Check if user has access to export feature
-    if (analytics.plan === 'free') {
-      throw new Error('Analytics export is only available for Pro and Elite subscribers');
-    }
-    
-    const exportData = {
-      exportDate: new Date().toISOString(),
-      plan: analytics.plan,
-      user: analytics.user,
-      sites: analytics.sites,
-      overrides: analytics.overrides,
-      summary: {
-        totalSites: analytics.sites.length,
-        totalTimeSpent: analytics.timeSpent.totalLifetimeSpent,
-        timeSaved: analytics.timeSpent.timeSaved,
-        productivityScore: analytics.timeSpent.productivityScore
-      }
-    };
-    
-    if (format === 'csv') {
-      return convertAnalyticsToCSV(exportData);
-    }
-    
-    return exportData;
-    
-  } catch (error) {
-    console.error("Error exporting analytics data:", error);
-    throw error;
-  }
-};
-
-// Convert analytics to CSV format
-const convertAnalyticsToCSV = (data) => {
-  const headers = Object.keys(data).join(',');
-  const values = Object.values(data).map(val => 
-    typeof val === 'object' ? JSON.stringify(val) : val
-  ).join(',');
-  return `${headers}\n${values}`;
-};
-
-// ========================================
-// ADMIN FUNCTIONS
-// ========================================
-
-// Admin user management
-export const getAllUsers = async () => {
-  try {
-    console.log("🔍 Admin: Fetching all users...");
     const usersCollection = collection(db, 'users');
-    const usersSnapshot = await getDocs(usersCollection);
+    
+    let usersQuery;
+    if (lastDoc) {
+      usersQuery = query(
+        usersCollection,
+        firestoreOrderBy('created_at', 'desc'),
+        startAfter(lastDoc),
+        firestoreLimit(limit)
+      );
+    } else {
+      usersQuery = query(
+        usersCollection,
+        firestoreOrderBy('created_at', 'desc'),
+        firestoreLimit(limit)
+      );
+    }
+    
+    const usersSnapshot = await getDocs(usersQuery);
     
     const users = [];
     usersSnapshot.forEach((doc) => {
       users.push({ id: doc.id, ...doc.data() });
     });
     
+    const lastVisible = usersSnapshot.docs[usersSnapshot.docs.length - 1];
+    
     console.log(`✅ Admin: Found ${users.length} users`);
-    return users;
+    return { users, lastDoc: lastVisible };
   } catch (error) {
     console.error("❌ Admin error fetching users:", error);
     throw error;
@@ -1775,21 +1612,15 @@ export const getAllUsers = async () => {
 
 export const getUserDetails = async (userId) => {
   try {
-    console.log("🔍 Admin: Fetching user details for:", userId);
     
-    // Get user profile
     const userProfile = await getUserProfile(userId);
     
-    // Get user subscription
     const subscription = await getUserSubscription(userId);
     
-    // Get user blocked sites
-    const blockedSites = await getBlockedSites(userId, true); // Include inactive
+    const blockedSites = await getBlockedSites(userId, true);
     
-    // Get user override stats
     const overrideStats = await getUserOverrideStats(userId);
     
-    // Get user analytics
     const analytics = await getUserAnalytics(userId);
     
     const userDetails = {
@@ -1817,26 +1648,23 @@ export const getUserDetails = async (userId) => {
 
 export const adminUpdateUserProfile = async (userId, updateData) => {
   try {
-    console.log("🔧 Admin: Updating user profile:", userId, updateData);
     
-    const userRef = doc(db, 'users', userId);
+    // const userRef = doc(db, 'users', userId);
     
-    // First check if user exists
-    const userDoc = await getDoc(userRef);
-    if (!userDoc.exists()) {
-      throw new Error(`User ${userId} not found in users collection`);
-    }
+    // const userDoc = await getDoc(userRef);
+    // if (!userDoc.exists()) {
+    //   throw new Error(`User ${userId} not found in users collection`);
+    // }
     
-    console.log(`📋 Current user data before update:`, userDoc.data());
+    // console.log(`📋 Current user data before update:`, userDoc.data());
     
     await updateDoc(userRef, {
       ...updateData,
       updated_at: serverTimestamp(),
     });
     
-    // Verify the update worked
-    const updatedDoc = await getDoc(userRef);
-    console.log(`✅ Admin: User profile updated successfully. New data:`, updatedDoc.data());
+    await getDoc(userRef);
+    // console.log(`✅ Admin: User profile updated successfully. New data:`, updatedDoc.data());
     
     return await getUserProfile(userId);
   } catch (error) {
@@ -1882,7 +1710,6 @@ export const adminGrantOverrides = async (userId, quantity, reason = "Admin gran
       });
     }
     
-    // Log activity for user
     await addUserActivity(userId, {
       type: 'admin_override_grant',
       description: `Received ${quantity} override${quantity > 1 ? 's' : ''} from admin`,
@@ -1904,17 +1731,12 @@ export const adminGrantOverrides = async (userId, quantity, reason = "Admin gran
 };
 
 export const adminChangeUserPlan = async (userId, newPlan, reason = "Admin changed") => {
-  try {
-    console.log(`🔄 Admin: Changing user ${userId} plan to ${newPlan}`);
-    
-    // Get current plan for comparison
+  try {    
     const currentUser = await getUserProfile(userId);
     const previousPlan = currentUser?.plan || 'free';
     
-    // Update user profile
     await adminUpdateUserProfile(userId, { plan: newPlan });
     
-    // Update subscription
     const subscriptionRef = doc(db, 'subscriptions', userId);
     const subscriptionDoc = await getDoc(subscriptionRef);
     
@@ -1934,10 +1756,8 @@ export const adminChangeUserPlan = async (userId, newPlan, reason = "Admin chang
       await createSubscription(userId, newPlan);
     }
     
-    // Grant plan benefits including overrides (like buying the package for free)
     await grantPlanBenefits(userId, newPlan, previousPlan, reason);
     
-    // Log activity for user about plan change
     const planNames = { 
       free: 'Free', 
       pro: 'Pro', 
@@ -1972,12 +1792,10 @@ export const adminChangeUserPlan = async (userId, newPlan, reason = "Admin chang
   }
 };
 
-// Grant all benefits when plan is changed by admin (like buying the package for free)
 export const grantPlanBenefits = async (userId, newPlan, previousPlan = 'free', reason = "Plan upgrade benefits") => {
   try {
     console.log(`🎁 Admin: Granting ${newPlan} plan benefits to user ${userId}`);
     
-    // Define plan benefits according to specifications
     const planBenefits = {
       free: {
         overrides: 0,
@@ -1988,63 +1806,41 @@ export const grantPlanBenefits = async (userId, newPlan, previousPlan = 'free', 
         features: ['Basic site blocking', 'Community support', '$1.99 per override']
       },
       pro: {
-        overrides: 15, // Initial grant - corrected to 15
-        monthly_overrides: 15, // Monthly recurring - corrected to 15
+        overrides: 15,
+        monthly_overrides: 15,
         sites_limit: -1, // unlimited
         devices_limit: 3,
         lockout_duration: -1, // custom duration/end time
         features: ['Unlimited time tracking', 'Custom lockout durations', '15 free overrides/month', 'AI nudges', 'Sync + basic reports']
       },
       elite: {
-        overrides: -1, // Unlimited - special case
-        monthly_overrides: -1, // Unlimited
+        overrides: 200,
+        monthly_overrides: 200,
         sites_limit: -1, // unlimited
         devices_limit: 10,
         lockout_duration: -1, // custom duration/end time
-        features: ['Unlimited overrides', 'AI usage insights', 'Journaling', '90-day encrypted history', 'Smart AI recommendations']
+        features: ['200 overrides', 'AI usage insights', 'Journaling', '90-day encrypted history', 'Smart AI recommendations']
       }
     };
     
     const newBenefits = planBenefits[newPlan] || planBenefits.free;
     const previousBenefits = planBenefits[previousPlan] || planBenefits.free;
     
-    // Handle override granting logic based on plan changes
     let overridesToGrant = 0;
-    let setUnlimited = false;
     let resetToZero = false;
     
     if (newPlan === 'elite') {
-      // Elite gets unlimited overrides
-      setUnlimited = true;
+      overridesToGrant = 200;
     } else if (newPlan === 'pro') {
-      // Pro gets 15 overrides
       overridesToGrant = 15;
-    } else if (newPlan === 'free' && previousPlan === 'elite') {
-      // Downgrade from Elite to Free: reset to 0 (lose unlimited)
+    } else if (newPlan === 'free' && (previousPlan === 'elite' || previousPlan === 'pro')) {
       resetToZero = true;
     }
-    // If downgrading from Pro to Free, preserve existing override balance (don't decrease)
     
-    // Apply override changes
-    if (setUnlimited) {
-      // For Elite plan, set unlimited overrides (represented as -1)
-      console.log(`🌟 Setting unlimited overrides for Elite plan user ${userId}`);
-      const overrideRef = doc(db, 'user_overrides', userId);
-      await setDoc(overrideRef, {
-        user_id: userId,
-        overrides: -1,
-        overrides_left: -1, // Unlimited
-        monthly_limit: -1, // Unlimited
-        total_overrides_received: -1, // Unlimited
-        current_plan: newPlan,
-        plan_activated_at: serverTimestamp(),
-        created_at: serverTimestamp()
-      }, { merge: true });
-      console.log(`✅ Elite plan unlimited overrides set for user ${userId}`);
-    } else if (resetToZero) {
-      // Reset overrides when downgrading from Elite
+    if (resetToZero) {
       const overrideRef = doc(db, 'user_overrides', userId);
       await updateDoc(overrideRef, {
+        overrides: 0,
         overrides_left: 0,
         monthly_limit: 0,
         current_plan: newPlan,
@@ -2052,7 +1848,6 @@ export const grantPlanBenefits = async (userId, newPlan, previousPlan = 'free', 
         downgrade_from: previousPlan
       });
     } else if (overridesToGrant > 0) {
-      // Grant specific number of overrides
       await adminGrantOverrides(
         userId, 
         overridesToGrant, 
@@ -2060,35 +1855,29 @@ export const grantPlanBenefits = async (userId, newPlan, previousPlan = 'free', 
       );
     }
     
-    // Update user profile with plan features and limits
     const userRef = doc(db, 'users', userId);
     
-    console.log(`📝 Updating user profile with plan: ${newPlan} and benefits:`, newBenefits);
-    
     await updateDoc(userRef, {
-      plan: newPlan, // ENSURE plan is updated in users collection
-      plan_features: newBenefits.features,
+      plan: newPlan,
+      // plan_features: newBenefits.features,
       sites_limit: newBenefits.sites_limit,
       devices_limit: newBenefits.devices_limit,
       lockout_duration: newBenefits.lockout_duration,
       monthly_overrides: newBenefits.monthly_overrides,
-      plan_benefits_granted_at: serverTimestamp(),
-      last_plan_change: {
-        from: previousPlan,
-        to: newPlan,
-        changed_at: serverTimestamp(),
-        benefits_granted: newBenefits,
-        override_action: setUnlimited ? 'unlimited' : resetToZero ? 'reset' : overridesToGrant > 0 ? 'granted' : 'preserved'
-      },
+      // plan_benefits_granted_at: serverTimestamp(),
+      // last_plan_change: {
+      //   from: previousPlan,
+      //   to: newPlan,
+      //   changed_at: serverTimestamp(),
+      //   benefits_granted: newBenefits,
+      //   override_action: resetToZero ? 'reset' : overridesToGrant > 0 ? 'granted' : 'preserved'
+      // },
       updated_at: serverTimestamp()
     });
     
-    // Verify the plan was updated
     const updatedUserDoc = await getDoc(userRef);
-    console.log(`✅ User plan updated verification:`, updatedUserDoc.data().plan);
     
-    // Update override stats to reflect new monthly allowance (only if Elite plan wasn't already set)
-    if (!setUnlimited) {
+    if (!resetToZero) {
       const overrideRef = doc(db, 'user_overrides', userId);
       const overrideDoc = await getDoc(overrideRef);
       
@@ -2100,7 +1889,6 @@ export const grantPlanBenefits = async (userId, newPlan, previousPlan = 'free', 
           current_plan: newPlan
         });
       } else {
-        // Create override document if it doesn't exist
         await setDoc(overrideRef, {
           user_id: userId,
           overrides_left: newBenefits.overrides,
@@ -2114,11 +1902,10 @@ export const grantPlanBenefits = async (userId, newPlan, previousPlan = 'free', 
       }
     }
     
-    // Create audit log for plan benefits
     const auditRef = collection(db, 'admin_audit');
     await addDoc(auditRef, {
       action: 'GRANT_PLAN_BENEFITS',
-      admin_id: 'system', // Could be updated to actual admin ID
+      admin_id: 'system',
       target_user_id: userId,
       details: {
         previous_plan: previousPlan,
@@ -2132,12 +1919,6 @@ export const grantPlanBenefits = async (userId, newPlan, previousPlan = 'free', 
       timestamp: serverTimestamp()
     });
     
-    console.log(`✅ Admin: Successfully granted ${newPlan} benefits to user ${userId}:`, {
-      overrides: newBenefits.overrides,
-      monthly_overrides: newBenefits.monthly_overrides,
-      sites_limit: newBenefits.sites_limit
-    });
-    
     return { success: true, benefits: newBenefits };
     
   } catch (error) {
@@ -2146,20 +1927,36 @@ export const grantPlanBenefits = async (userId, newPlan, previousPlan = 'free', 
   }
 };
 
-// Admin site management
-export const adminGetAllSites = async () => {
+export const adminGetAllSites = async (lastDoc = null, limit = 10) => {
   try {
-    console.log("🔍 Admin: Fetching all blocked sites...");
     const sitesCollection = collection(db, 'blocked_sites');
-    const sitesSnapshot = await getDocs(sitesCollection);
+    
+    let sitesQuery;
+    if (lastDoc) {
+      sitesQuery = query(
+        sitesCollection,
+        firestoreOrderBy('created_at', 'desc'),
+        startAfter(lastDoc),
+        firestoreLimit(limit)
+      );
+    } else {
+      sitesQuery = query(
+        sitesCollection,
+        firestoreOrderBy('created_at', 'desc'),
+        firestoreLimit(limit)
+      );
+    }
+    
+    const sitesSnapshot = await getDocs(sitesQuery);
     
     const sites = [];
     sitesSnapshot.forEach((doc) => {
       sites.push({ id: doc.id, ...doc.data() });
     });
     
-    console.log(`✅ Admin: Found ${sites.length} total sites`);
-    return sites;
+    const lastVisible = sitesSnapshot.docs[sitesSnapshot.docs.length - 1];
+    
+    return { sites, lastDoc: lastVisible };
   } catch (error) {
     console.error("❌ Admin error fetching all sites:", error);
     throw error;
@@ -2168,8 +1965,6 @@ export const adminGetAllSites = async () => {
 
 export const adminSoftDeleteSite = async (siteId, reason = "Admin soft deleted") => {
   try {
-    console.log(`🗑️ Admin: Soft deleting site ${siteId}`);
-    
     await updateDoc(doc(db, 'blocked_sites', siteId), {
       is_active: false,
       soft_deleted_at: serverTimestamp(),
@@ -2177,7 +1972,6 @@ export const adminSoftDeleteSite = async (siteId, reason = "Admin soft deleted")
       updated_at: serverTimestamp()
     });
     
-    console.log("✅ Admin: Site soft deleted successfully");
     return { success: true, message: "Site soft deleted" };
   } catch (error) {
     console.error("❌ Admin error soft deleting site:", error);
@@ -2186,14 +1980,10 @@ export const adminSoftDeleteSite = async (siteId, reason = "Admin soft deleted")
 };
 
 export const adminHardDeleteSite = async (siteId, reason = "Admin hard deleted") => {
-  try {
-    console.log(`💥 Admin: Hard deleting site ${siteId}`);
-    
-    // Get site data before deletion for logging
+  try {    
     const siteDoc = await getDoc(doc(db, 'blocked_sites', siteId));
     const siteData = siteDoc.exists() ? siteDoc.data() : null;
     
-    // Log deletion for audit trail
     if (siteData) {
       await addDoc(collection(db, 'admin_audit_log'), {
         action: 'hard_delete_site',
@@ -2204,10 +1994,8 @@ export const adminHardDeleteSite = async (siteId, reason = "Admin hard deleted")
       });
     }
     
-    // Delete the site
     await deleteDoc(doc(db, 'blocked_sites', siteId));
     
-    console.log("✅ Admin: Site hard deleted successfully");
     return { success: true, message: "Site permanently deleted" };
   } catch (error) {
     console.error("❌ Admin error hard deleting site:", error);
@@ -2217,8 +2005,6 @@ export const adminHardDeleteSite = async (siteId, reason = "Admin hard deleted")
 
 export const adminUpdateSite = async (siteId, updateData) => {
   try {
-    console.log("🔧 Admin: Updating site:", siteId, updateData);
-    
     await updateDoc(doc(db, 'blocked_sites', siteId), {
       ...updateData,
       updated_at: serverTimestamp(),
@@ -2226,9 +2012,6 @@ export const adminUpdateSite = async (siteId, updateData) => {
       admin_modified_at: serverTimestamp()
     });
     
-    console.log("✅ Admin: Site updated successfully");
-    
-    // Return updated site data
     const updatedDoc = await getDoc(doc(db, 'blocked_sites', siteId));
     return { id: updatedDoc.id, ...updatedDoc.data() };
   } catch (error) {
@@ -2237,10 +2020,8 @@ export const adminUpdateSite = async (siteId, updateData) => {
   }
 };
 
-// Admin database direct access
 export const adminGetCollection = async (collectionName) => {
   try {
-    console.log(`🔍 Admin: Fetching collection ${collectionName}...`);
     const collectionRef = collection(db, collectionName);
     const snapshot = await getDocs(collectionRef);
     
@@ -2249,7 +2030,6 @@ export const adminGetCollection = async (collectionName) => {
       documents.push({ id: doc.id, ...doc.data() });
     });
     
-    console.log(`✅ Admin: Found ${documents.length} documents in ${collectionName}`);
     return documents;
   } catch (error) {
     console.error(`❌ Admin error fetching collection ${collectionName}:`, error);
@@ -2259,17 +2039,11 @@ export const adminGetCollection = async (collectionName) => {
 
 export const adminUpdateDocument = async (collectionName, documentId, updateData) => {
   try {
-    console.log(`🔧 Admin: Updating document ${documentId} in ${collectionName}`);
-    
     await updateDoc(doc(db, collectionName, documentId), {
       ...updateData,
       admin_modified: true,
       admin_modified_at: serverTimestamp()
     });
-    
-    console.log("✅ Admin: Document updated successfully");
-    
-    // Return updated document
     const updatedDoc = await getDoc(doc(db, collectionName, documentId));
     return { id: updatedDoc.id, ...updatedDoc.data() };
   } catch (error) {
@@ -2280,146 +2054,46 @@ export const adminUpdateDocument = async (collectionName, documentId, updateData
 
 export const adminDeleteDocument = async (collectionName, documentId, createAuditLog = true) => {
   try {
-    console.log(`💥 Admin: Deleting document ${documentId} from ${collectionName}`);
-    
-    // Get document data before deletion for audit log
-    let documentData = null;
-    if (createAuditLog) {
-      const docSnapshot = await getDoc(doc(db, collectionName, documentId));
-      documentData = docSnapshot.exists() ? docSnapshot.data() : null;
-    }
-    
-    // Delete the document
     await deleteDoc(doc(db, collectionName, documentId));
     
-    // Create audit log
-    if (createAuditLog && documentData) {
+    if (createAuditLog) {
       await addDoc(collection(db, 'admin_audit_log'), {
         action: 'delete_document',
         collection: collectionName,
         document_id: documentId,
-        document_data: documentData,
-        deleted_at: serverTimestamp()
+        timestamp: serverTimestamp(),
+        admin_uid: auth.currentUser?.uid || 'unknown'
       });
     }
     
-    console.log("✅ Admin: Document deleted successfully");
-    return { success: true, message: "Document deleted" };
+    return { success: true };
   } catch (error) {
-    console.error(`❌ Admin error deleting document:`, error);
+    console.error('Error deleting document:', error);
     throw error;
   }
 };
 
-export const adminCreateDocument = async (collectionName, documentData, customId = null) => {
-  try {
-    console.log(`➕ Admin: Creating document in ${collectionName}`);
-    
-    const dataWithTimestamp = {
-      ...documentData,
-      admin_created: true,
-      created_at: serverTimestamp(),
-      updated_at: serverTimestamp()
-    };
-    
-    let docRef;
-    if (customId) {
-      docRef = doc(db, collectionName, customId);
-      await setDoc(docRef, dataWithTimestamp);
-    } else {
-      docRef = await addDoc(collection(db, collectionName), dataWithTimestamp);
-    }
-    
-    console.log("✅ Admin: Document created successfully");
-    
-    // Return created document
-    const createdDoc = await getDoc(docRef);
-    return { id: createdDoc.id, ...createdDoc.data() };
-  } catch (error) {
-    console.error(`❌ Admin error creating document:`, error);
-    throw error;
-  }
-};
-
-// Admin analytics and statistics
 export const adminGetSystemStats = async () => {
   try {
-    console.log("📊 Admin: Gathering system statistics...");
+    const stats = await getAdminStats();
     
-    // Get counts from all collections
-    const [users, subscriptions, blockedSites, userOverrides, auditLogs] = await Promise.all([
-      getDocs(collection(db, 'users')),
-      getDocs(collection(db, 'subscriptions')),
-      getDocs(collection(db, 'blocked_sites')),
-      getDocs(collection(db, 'user_overrides')),
-      getDocs(collection(db, 'admin_audit_log'))
-    ]);
+    const auditLogs = await getDocs(collection(db, 'admin_audit_log'));
     
-    // Calculate subscription plan distribution
-    const planCounts = { free: 0, pro: 0, elite: 0 };
-    subscriptions.forEach(doc => {
-      const plan = doc.data().plan || 'free';
-      planCounts[plan] = (planCounts[plan] || 0) + 1;
-    });
-    
-    // Calculate site statistics
-    let activeSites = 0;
-    let inactiveSites = 0;
-    blockedSites.forEach(doc => {
-      if (doc.data().is_active === false) {
-        inactiveSites++;
-      } else {
-        activeSites++;
-      }
-    });
-    
-    // Calculate override statistics
-    let totalOverrides = 0;
-    let totalSpent = 0;
-    userOverrides.forEach(doc => {
-      const data = doc.data();
-      totalOverrides += data.overrides || 0;
-      totalSpent += data.total_spent || 0;
-    });
-    
-    const stats = {
-      users: {
-        total: users.size,
-        withSubscriptions: subscriptions.size
-      },
-      subscriptions: {
-        total: subscriptions.size,
-        byPlan: planCounts
-      },
-      sites: {
-        total: blockedSites.size,
-        active: activeSites,
-        inactive: inactiveSites
-      },
-      overrides: {
-        totalAvailable: totalOverrides,
-        totalMoneySpent: totalSpent,
-        usersWithOverrides: userOverrides.size
-      },
+    return {
+      ...stats,
       audit: {
         totalLogs: auditLogs.size
       },
       generatedAt: new Date().toISOString()
     };
-    
-    console.log("✅ Admin: System statistics compiled");
-    return stats;
   } catch (error) {
-    console.error("❌ Admin error gathering system stats:", error);
+    console.error("❌ Admin error getting system stats:", error);
     throw error;
   }
 };
 
-// Admin search and filter functions
 export const adminSearchUsers = async (searchTerm) => {
-  try {
-    console.log(`🔍 Admin: Searching users for: ${searchTerm}`);
-    
+  try {    
     const users = await getAllUsers();
     
     const filteredUsers = users.filter(user => 
@@ -2428,7 +2102,6 @@ export const adminSearchUsers = async (searchTerm) => {
       user.id?.toLowerCase().includes(searchTerm.toLowerCase())
     );
     
-    console.log(`✅ Admin: Found ${filteredUsers.length} matching users`);
     return filteredUsers;
   } catch (error) {
     console.error("❌ Admin error searching users:", error);
@@ -2438,9 +2111,7 @@ export const adminSearchUsers = async (searchTerm) => {
 
 export const adminSearchSites = async (searchTerm) => {
   try {
-    console.log(`🔍 Admin: Searching sites for: ${searchTerm}`);
-    
-    const sites = await adminGetAllSites();
+    const { sites } = await adminGetAllSites(null, 100);
     
     const filteredSites = sites.filter(site => 
       site.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -2448,7 +2119,6 @@ export const adminSearchSites = async (searchTerm) => {
       site.user_id?.toLowerCase().includes(searchTerm.toLowerCase())
     );
     
-    console.log(`✅ Admin: Found ${filteredSites.length} matching sites`);
     return filteredSites;
   } catch (error) {
     console.error("❌ Admin error searching sites:", error);
@@ -2456,16 +2126,12 @@ export const adminSearchSites = async (searchTerm) => {
   }
 };
 
-// Check if user is admin (using isAdmin field in users collection)
 export const checkAdminStatus = async (userId) => {
   try {
-    console.log("🔍 Checking admin status for user:", userId);
     const userProfile = await getUserProfile(userId);
     
-    // Check the isAdmin field in the user profile
     const isAdmin = userProfile?.isAdmin === true;
     
-    console.log("🛠️ Admin status result:", isAdmin);
     return isAdmin;
   } catch (error) {
     console.error("❌ Error checking admin status:", error);
@@ -2473,20 +2139,16 @@ export const checkAdminStatus = async (userId) => {
   }
 }; 
 
-// Get user's recent activity for admin panel
 export const getUserRecentActivity = async (userId) => {
-  try {
-    console.log("🔍 Admin: Fetching recent activity for user:", userId);
-    
+  try {    
     const activities = [];
-    
-    // Get activities from user_activity collection (admin actions, etc.)
+
     const activityRef = collection(db, 'user_activity');
     const activityQuery = query(
       activityRef,
       where('user_id', '==', userId),
-      orderBy('created_at', 'desc'),
-      limit(10)
+      firestoreOrderBy('created_at', 'desc'),
+      firestoreLimit(10)
     );
     
     try {
@@ -2506,13 +2168,12 @@ export const getUserRecentActivity = async (userId) => {
       console.log("No user_activity collection yet or index needed:", activityError.message);
     }
     
-    // Get recent blocked sites (last 10)
     const sitesRef = collection(db, 'blocked_sites');
     const sitesQuery = query(
       sitesRef, 
       where('user_id', '==', userId),
-      orderBy('created_at', 'desc'),
-      limit(5)
+      firestoreOrderBy('created_at', 'desc'),
+      firestoreLimit(5)
     );
     const sitesSnapshot = await getDocs(sitesQuery);
     
@@ -2529,14 +2190,12 @@ export const getUserRecentActivity = async (userId) => {
       }
     });
     
-    // Get recent override purchases
     const overrideRef = doc(db, 'user_overrides', userId);
     const overrideDoc = await getDoc(overrideRef);
     
     if (overrideDoc.exists()) {
       const overrideData = overrideDoc.data();
       
-      // Check for recent admin grants
       if (overrideData.last_admin_grant && overrideData.last_admin_grant.granted_at) {
         activities.push({
           type: 'admin_grant',
@@ -2547,7 +2206,6 @@ export const getUserRecentActivity = async (userId) => {
         });
       }
       
-      // Add monthly stats activities
       if (overrideData.monthly_stats) {
         Object.entries(overrideData.monthly_stats).slice(-3).forEach(([month, stats]) => {
           if (stats.overrides_used > 0) {
@@ -2563,7 +2221,6 @@ export const getUserRecentActivity = async (userId) => {
       }
     }
     
-    // Get user profile to check last update
     const userProfile = await getUserProfile(userId);
     if (userProfile && userProfile.updated_at) {
       activities.push({
@@ -2575,17 +2232,14 @@ export const getUserRecentActivity = async (userId) => {
       });
     }
     
-    // Sort activities by timestamp (newest first)
     activities.sort((a, b) => {
       const aTime = a.timestamp?.seconds || a.timestamp?.getTime?.() / 1000 || 0;
       const bTime = b.timestamp?.seconds || b.timestamp?.getTime?.() / 1000 || 0;
       return bTime - aTime;
     });
     
-    // Return only the 5 most recent activities
     const recentActivities = activities.slice(0, 5);
     
-    console.log("✅ Admin: Recent activity fetched:", recentActivities.length, "activities");
     return recentActivities;
     
   } catch (error) {
@@ -2594,18 +2248,12 @@ export const getUserRecentActivity = async (userId) => {
   }
 };
 
-// Get enhanced user details with recent activity
 export const getUserDetailsWithActivity = async (userId) => {
-  try {
-    console.log("🔍 Admin: Fetching enhanced user details for:", userId);
-    
-    // Get existing user details
+  try {    
     const userDetails = await getUserDetails(userId);
     
-    // Get recent activity
     const recentActivity = await getUserRecentActivity(userId);
     
-    // Get subscription history
     const subscriptionRef = doc(db, 'subscriptions', userId);
     const subscriptionDoc = await getDoc(subscriptionRef);
     let subscriptionHistory = [];
@@ -2624,7 +2272,6 @@ export const getUserDetailsWithActivity = async (userId) => {
       }
     }
     
-    // Enhance user details with activity data
     const enhancedDetails = {
       ...userDetails,
       recentActivity: recentActivity,
@@ -2632,16 +2279,14 @@ export const getUserDetailsWithActivity = async (userId) => {
       lastActivity: recentActivity.length > 0 ? recentActivity[0] : null
     };
     
-    console.log("✅ Admin: Enhanced user details compiled");
     return enhancedDetails;
     
   } catch (error) {
     console.error("❌ Admin error fetching enhanced user details:", error);
-    return await getUserDetails(userId); // Fallback to basic details
+    return await getUserDetails(userId);
   }
 };
 
-// Format timestamp for display
 export const formatActivityTimestamp = (timestamp) => {
   try {
     let date;
@@ -2670,16 +2315,13 @@ export const formatActivityTimestamp = (timestamp) => {
   }
 };
 
-// Get user's sites for admin panel
 export const getUserSites = async (userId) => {
-  try {
-    console.log("🔍 Admin: Fetching sites for user:", userId);
-    
+  try {    
     const sitesRef = collection(db, 'blocked_sites');
     const sitesQuery = query(
       sitesRef, 
       where('user_id', '==', userId),
-      orderBy('created_at', 'desc')
+      firestoreOrderBy('created_at', 'desc')
     );
     const sitesSnapshot = await getDocs(sitesQuery);
     
@@ -2689,15 +2331,12 @@ export const getUserSites = async (userId) => {
       sites.push({
         id: doc.id,
         ...siteData,
-        // Calculate site efficiency
         efficiency: calculateSiteEfficiency(siteData),
-        // Format timestamps
         createdAt: siteData.created_at,
         updatedAt: siteData.updated_at || siteData.created_at
       });
     });
     
-    console.log("✅ Admin: Found", sites.length, "sites for user");
     return sites;
     
   } catch (error) {
@@ -2706,13 +2345,8 @@ export const getUserSites = async (userId) => {
   }
 };
 
-// ====================== USER ACTIVITY TRACKING ======================
-
-// Add activity to user's recent activity log
 export const addUserActivity = async (userId, activityData) => {
-  try {
-    console.log(`📝 Adding activity for user ${userId}:`, activityData);
-    
+  try {    
     const activityRef = collection(db, 'user_activity');
     const activity = {
       user_id: userId,
@@ -2725,11 +2359,296 @@ export const addUserActivity = async (userId, activityData) => {
     };
     
     const docRef = await addDoc(activityRef, activity);
-    console.log(`✅ Activity logged with ID: ${docRef.id}`);
-    
     return { id: docRef.id, ...activity };
   } catch (error) {
     console.error("❌ Error adding user activity:", error);
     throw error;
   }
 };
+
+export const initializeAdminStats = async () => {
+  try {
+    const statsRef = doc(db, 'admin_stats', 'global');
+    const statsDoc = await getDoc(statsRef);
+    
+    if (!statsDoc.exists()) {
+      await setDoc(statsRef, {
+        users: {
+          total: 0,
+          byPlan: { free: 0, pro: 0, elite: 0 }
+        },
+        sites: {
+          total: 0
+        },
+        revenue: {
+          total: 0,
+          byPlan: { pro: 0, elite: 0 },
+          byOverrides: 0,
+          lastPurchase: null
+        },
+        lastUpdated: serverTimestamp()
+      });
+    }
+    return statsDoc.data();
+  } catch (error) {
+    console.error("Error initializing admin stats:", error);
+    throw error;
+  }
+};
+
+export const updateUserStats = async (change, type) => {
+  const statsRef = doc(db, 'admin_stats', 'global');
+
+  try {
+    await runTransaction(db, async (transaction) => {
+      const statsDoc = await transaction.get(statsRef);
+      const stats = statsDoc.data();
+
+      if (type === 'create') {
+        stats.users.total += 1;
+        stats.users.byPlan.free += 1;
+      } else if (type === 'delete') {
+        stats.users.total -= 1;
+        const oldPlan = change.before.data().plan || 'free';
+        stats.users.byPlan[oldPlan] -= 1;
+      } else if (type === 'update') {
+        const oldPlan = change.before.data().plan || 'free';
+        const newPlan = change.after.data().plan || 'free';
+        if (oldPlan !== newPlan) {
+          stats.users.byPlan[oldPlan] -= 1;
+          stats.users.byPlan[newPlan] += 1;
+        }
+      }
+
+      stats.lastUpdated = serverTimestamp();
+      transaction.set(statsRef, stats);
+    });
+  } catch (error) {
+    console.error("Error updating user stats:", error);
+    throw error;
+  }
+};
+
+export const updateSiteStats = async (change, type) => {
+  const statsRef = doc(db, 'admin_stats', 'global');
+
+  try {
+    await runTransaction(db, async (transaction) => {
+      const statsDoc = await transaction.get(statsRef);
+      const stats = statsDoc.data();
+
+      if (type === 'create') {
+        stats.sites.total += 1;
+      } else if (type === 'delete') {
+        stats.sites.total -= 1;
+      }
+
+      stats.lastUpdated = serverTimestamp();
+      transaction.set(statsRef, stats);
+    });
+  } catch (error) {
+    console.error("Error updating site stats:", error);
+    throw error;
+  }
+};
+
+
+
+export const getAdminStats = async () => {
+  try {
+    const statsRef = doc(db, 'admin_stats', 'global');
+    const statsDoc = await getDoc(statsRef);
+    
+    if (!statsDoc.exists()) {
+      return await initializeAdminStats();
+    }
+    
+    return statsDoc.data();
+  } catch (error) {
+    console.error("Error getting admin stats:", error);
+    throw error;
+  }
+};
+
+export const recalculateAllStats = async () => {
+  try {    
+    const [usersSnap, sitesSnap, purchasesSnap, overridePurchasesSnap] = await Promise.all([
+      getDocs(collection(db, 'users')),
+      getDocs(collection(db, 'blocked_sites')),
+      getDocs(collection(db, 'plan_purchases')),
+      getDocs(collection(db, 'override_purchases'))
+    ]);
+
+    const stats = {
+      users: {
+        total: usersSnap.size,
+        byPlan: { free: 0, pro: 0, elite: 0 }
+      },
+      sites: {
+        total: sitesSnap.size
+      },
+      revenue: {
+        total: 0,
+        byPlan: { pro: 0, elite: 0 },
+        byOverrides: 0,
+        lastPurchase: null
+      },
+      lastUpdated: serverTimestamp()
+    };
+
+    usersSnap.forEach(doc => {
+      const plan = doc.data().plan || 'free';
+      stats.users.byPlan[plan] = (stats.users.byPlan[plan] || 0) + 1;
+    });
+
+    // Calculate plan purchase revenue
+    purchasesSnap.forEach(doc => {
+      const data = doc.data();
+      if (data.amount_paid) {
+        stats.revenue.total += data.amount_paid;
+        if (data.plan && stats.revenue.byPlan[data.plan] !== undefined) {
+          stats.revenue.byPlan[data.plan] += data.amount_paid;
+        }
+        if (!stats.revenue.lastPurchase || data.timestamp > stats.revenue.lastPurchase) {
+          stats.revenue.lastPurchase = data.timestamp;
+        }
+      }
+    });
+
+    // Calculate override purchase revenue
+    overridePurchasesSnap.forEach(doc => {
+      const data = doc.data();
+      if (data.amount_paid) {
+        stats.revenue.total += data.amount_paid;
+        stats.revenue.byOverrides += data.amount_paid;
+        if (!stats.revenue.lastPurchase || data.timestamp > stats.revenue.lastPurchase) {
+          stats.revenue.lastPurchase = data.timestamp;
+        }
+      }
+    });
+
+    await setDoc(doc(db, 'admin_stats', 'global'), stats);
+    
+    return stats;
+  } catch (error) {
+    console.error("Error recalculating stats:", error);
+    throw error;
+  }
+};
+
+const updateRevenueStats = async (amount, type = 'override') => {
+  const statsRef = doc(db, 'admin_stats', 'global');
+
+  try {
+    await runTransaction(db, async (transaction) => {
+      const statsDoc = await transaction.get(statsRef);
+      let stats = statsDoc.exists() ? statsDoc.data() : await initializeAdminStats();
+
+      // Update total revenue
+      stats.revenue.total += amount;
+
+      // Update specific revenue type
+      if (type === 'override') {
+        stats.revenue.byOverrides += amount;
+      } else if (type === 'pro' || type === 'elite') {
+        stats.revenue.byPlan[type] += amount;
+      }
+
+      // Update last purchase timestamp
+      stats.revenue.lastPurchase = serverTimestamp();
+      stats.lastUpdated = serverTimestamp();
+      
+      transaction.set(statsRef, stats);
+    });
+  } catch (error) {
+    console.error("Error updating revenue stats:", error);
+    throw error;
+  }
+};
+
+export const adminGetDocumentIds = async (collectionName, searchTerm = '') => {
+  try {    
+    if (!searchTerm) {
+      return [];
+    }
+
+    const searchLower = searchTerm.toLowerCase();
+    let documents = [];
+
+    if (!searchTerm.includes(' ') && !searchTerm.includes('@') && !searchTerm.includes('.')) {
+      const docRef = doc(db, collectionName, searchTerm);
+      const docSnap = await getDoc(docRef);
+      
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        return [{
+          id: docSnap.id,
+          name: data.name || data.profile_name || undefined,
+          email: data.profile_email || undefined,
+          url: data.url || undefined,
+          created_at: data.created_at || undefined
+        }];
+      } 
+      return [];
+    }
+
+    const collectionRef = collection(db, collectionName);
+    let queryRef;
+
+    if (searchLower.includes('@')) {
+      queryRef = query(collectionRef, 
+        where('profile_email', '==', searchTerm),
+        firestoreLimit(1)
+      );
+    }
+    else if (searchLower.includes('.') || searchLower.includes('/')) {
+      queryRef = query(collectionRef, 
+        where('url', '==', searchTerm),
+        firestoreLimit(1)
+      );
+    }
+    else {
+      queryRef = query(collectionRef,
+        where('name', '==', searchTerm),
+        firestoreLimit(1)
+      );
+    }
+
+    const snapshot = await getDocs(queryRef);
+    
+    if (!snapshot.empty) {
+      const doc = snapshot.docs[0];
+      const data = doc.data();
+      documents.push({
+        id: doc.id,
+        name: data.name || data.profile_name || undefined,
+        email: data.profile_email || undefined,
+        url: data.url || undefined,
+        created_at: data.created_at || undefined
+      });
+    }
+    
+    return documents;
+  } catch (error) {
+    console.error(`❌ Admin error searching for document:`, error);
+    throw error;
+  }
+};
+
+export const adminGetDocument = async (collectionName, documentId) => {
+  try {
+    const docRef = doc(db, collectionName, documentId);
+    const docSnap = await getDoc(docRef);
+    
+    if (!docSnap.exists()) {
+      throw new Error(`Document ${documentId} not found in ${collectionName}`);
+    }
+    
+    const document = { id: docSnap.id, ...docSnap.data() }; 
+    return document;
+  } catch (error) {
+    console.error(`❌ Admin error fetching document:`, error);
+    throw error;
+  }
+};
+

@@ -511,15 +511,30 @@ export default function Analytics({ onBack, user, subscription, blockedSites, ov
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600">
                   <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {blockedSites?.filter(site => site.is_active !== false).length || 0}
+                    {blockedSites?.length || 0}
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Active Sites</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Sites Tracking</p>
                 </div>
                 <div className="p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600">
                   <p className="text-lg font-bold text-gray-900 dark:text-white">
-                    {blockedSites?.filter(site => site.is_active === false).length || 0}
+                    {(() => {
+                      // Calculate average time limit from all active sites
+                      const activeSites = blockedSites?.filter(site => site.is_active !== false) || [];
+                      if (activeSites.length === 0) return '0m';
+                      
+                      const totalLimit = activeSites.reduce((sum, site) => sum + (site.time_limit || 1800), 0);
+                      const averageSeconds = Math.floor(totalLimit / activeSites.length);
+                      
+                      const hours = Math.floor(averageSeconds / 3600);
+                      const minutes = Math.floor((averageSeconds % 3600) / 60);
+                      
+                      if (hours > 0) {
+                        return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+                      }
+                      return `${minutes}m`;
+                    })()}
                   </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Paused Sites</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Average Time Limit</p>
                 </div>
               </div>
               <div className="p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600">
