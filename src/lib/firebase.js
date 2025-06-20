@@ -6,6 +6,7 @@ import {
   signOut, 
   onAuthStateChanged 
 } from 'firebase/auth';
+import { toast } from 'react-hot-toast';
 import { 
   getFirestore, 
   doc, 
@@ -124,11 +125,34 @@ export const createUserProfile = async (userId, userData) => {
       daily_stats: {},
       weekly_stats: {},
       monthly_stats: {},
+      subscription_status: 'active',
+      override_balance: 0,
+      total_spent: 0,
+      last_purchase: null,
+      settings: {
+        notifications: true,
+        theme: 'light',
+        email_updates: true
+      },
       created_at: serverTimestamp(),
       updated_at: serverTimestamp(),
     };
 
+    // Create user profile
     await setDoc(doc(db, 'users', userId), userDoc);
+
+    // Create initial subscription document
+    const subscriptionDoc = {
+      user_id: userId,
+      plan: userData.plan || 'free',
+      status: 'active',
+      started_at: serverTimestamp(),
+      expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year from now
+      created_at: serverTimestamp(),
+      updated_at: serverTimestamp(),
+    };
+    await setDoc(doc(db, 'subscriptions', userId), subscriptionDoc);
+
     return { ...userDoc, id: userId };
   } catch (error) {
     console.error("Error creating user profile:", error);
@@ -139,16 +163,34 @@ export const createUserProfile = async (userId, userData) => {
 export const getUserProfile = async (userId) => {
   try {
     const userDoc = await getDoc(doc(db, 'users', userId));
-    
     if (!userDoc.exists()) {
-      return null;
+      throw new Error('User not found');
     }
 
-    const data = { id: userDoc.id, ...userDoc.data() };
-    return data;
+    const userData = userDoc.data();
+    
+    // Initialize money_spent if it doesn't exist
+    if (userData.money_spent === undefined) {
+      await initializeUserProfile(userId, userData);
+      return await getUserProfile(userId);
+    }
+
+    return {
+      id: userDoc.id,
+      ...userData,
+      profile_email: userData.profile_email || userData.email,
+      profile_name: userData.profile_name || userData.name || 'Anonymous',
+      plan: userData.plan || 'free',
+      total_time_saved: userData.total_time_saved || 0,
+      total_sites_blocked: userData.total_sites_blocked || 0,
+      daily_stats: userData.daily_stats || {},
+      weekly_stats: userData.weekly_stats || {},
+      monthly_stats: userData.monthly_stats || {},
+      money_spent: userData.money_spent || 0
+    };
   } catch (error) {
-    console.error("❌ Error in getUserProfile:", error);
-    return null;
+    console.error("Error getting user profile:", error);
+    throw error;
   }
 };
 
@@ -455,13 +497,33 @@ export const createSubscription = async (userId, plan) => {
   }
 };
 
-export const updateUserSubscription = async (userId, plan) => {
+export const updateUserSubscription = async (userId, plan, paymentData) => {
   try {
+    console.log("🔍 Getting user profile for:", userId);
+    let currentUser = await getUserProfile(userId);
+    console.log("📊 Current user data:", currentUser);
+
+    if (!currentUser) {
+      console.log("⚠️ User not found, creating profile...");
+      await createUserProfile(userId, { plan: 'free' });
+      currentUser = await getUserProfile(userId);
+      console.log("✅ Created new user profile:", currentUser);
+    }
+
+    if (!currentUser.plan) {
+      console.log("⚠️ No plan found, defaulting to free");
+      await updateDoc(doc(db, 'users', userId), {
+        plan: 'free',
+        updated_at: serverTimestamp()
+      });
+      currentUser.plan = 'free';
+    }
     
-    const currentUser = await getUserProfile(userId);
-    const previousPlan = currentUser?.plan || 'free';
+    const previousPlan = currentUser.plan;
+    console.log("📊 Previous plan:", previousPlan);
     
     const existingSubscription = await getUserSubscription(userId);
+    console.log("📊 Existing subscription:", existingSubscription);
     
     // Calculate plan price
     let planPrice = 0;
@@ -471,7 +533,43 @@ export const updateUserSubscription = async (userId, plan) => {
       planPrice = 19.99;
     }
     
+    // Create transaction if it's a paid plan
+    let transaction = null;
+    if (planPrice > 0) {
+      try {
+        const transactionData = {
+          type: 'plan_purchase',
+          amount: planPrice,
+          description: `Upgraded to ${plan.toUpperCase()} plan`,
+          payment_method: 'card',
+          payment_data: {
+            last4: paymentData.cardNumber.slice(-4),
+            expiry: paymentData.expiryDate,
+            name: paymentData.nameOnCard
+          },
+          metadata: {
+            previous_plan: previousPlan || 'free',
+            new_plan: plan,
+            price_per_unit: planPrice,
+            quantity: 1
+          },
+          status: 'completed',
+          user_id: userId,
+          created_at: serverTimestamp(),
+          updated_at: serverTimestamp()
+        };
+        
+        console.log("📝 Creating transaction with data:", transactionData);
+        transaction = await createTransaction(userId, transactionData);
+        console.log("✅ Transaction created:", transaction.id);
+      } catch (transactionError) {
+        console.error('❌ Error creating transaction:', transactionError);
+        throw transactionError;
+      }
+    }
+
     if (existingSubscription) {
+      console.log("📝 Updating existing subscription");
       const updateData = {
         plan: plan,
         status: 'active',
@@ -480,27 +578,10 @@ export const updateUserSubscription = async (userId, plan) => {
       };
       
       await updateDoc(doc(db, 'subscriptions', userId), updateData);
-      
       await updateDoc(doc(db, 'users', userId), {
         plan: plan,
         updated_at: serverTimestamp(),
       });
-      
-      // Add to plan_purchases collection
-      if (planPrice > 0) {
-        await addDoc(collection(db, 'plan_purchases'), {
-          user_id: userId,
-          plan: plan,
-          amount_paid: planPrice,
-          previous_plan: previousPlan,
-          purchase_date: serverTimestamp(),
-          transaction_id: `plan_${Date.now()}_${userId.substring(0, 8)}`,
-          created_at: serverTimestamp()
-        });
-        
-        // Update revenue stats
-        await updateRevenueStats(planPrice, plan);
-      }
       
       await grantPlanBenefits(userId, plan, previousPlan, "Website plan upgrade");
       
@@ -522,73 +603,70 @@ export const updateUserSubscription = async (userId, plan) => {
         icon: '💎',
         color: 'purple',
         data: {
-          previousPlan,
+          previousPlan: previousPlan || 'free',
           newPlan: plan,
           upgradedBy: 'user',
           upgradeSource: 'website',
           benefits: benefitsText,
-          amount_paid: planPrice
-        }
-      });
-      toast.success("Plan upgraded successfully");
-      return { id: userId, ...existingSubscription, ...updateData };
-    } else {
-      const newSubscription = await createSubscription(userId, plan);
-      
-      // Add to plan_purchases collection
-      if (planPrice > 0) {
-        await addDoc(collection(db, 'plan_purchases'), {
-          user_id: userId,
-          plan: plan,
           amount_paid: planPrice,
-          previous_plan: previousPlan,
-          purchase_date: serverTimestamp(),
-          transaction_id: `plan_${Date.now()}_${userId.substring(0, 8)}`,
-          created_at: serverTimestamp()
-        });
-        
-        // Update revenue stats
-        await updateRevenueStats(planPrice, plan);
-      }
-      
-      await updateDoc(doc(db, 'users', userId), {
-        plan: plan,
-        updated_at: serverTimestamp(),
-      });
-      
-      await grantPlanBenefits(userId, plan, previousPlan, "New plan subscription");
-      
-      const planNames = { 
-        free: 'Free', 
-        pro: 'Pro', 
-        elite: 'Elite' 
-      };
-      
-      const benefitsText = plan === 'elite' 
-        ? 'unlimited overrides'
-        : plan === 'pro' 
-          ? '15 free overrides/month'
-          : 'basic features';
-      
-      await addUserActivity(userId, {
-        type: 'plan_subscription',
-        description: `Subscribed to ${planNames[plan]} plan (${benefitsText})`,
-        icon: '🎉',
-        color: 'green',
-        data: {
-          previousPlan,
-          newPlan: plan,
-          upgradedBy: 'user',
-          upgradeSource: 'website',
-          benefits: benefitsText,
-          amount_paid: planPrice
+          transaction_id: transaction?.id
         }
       });
-      toast.success("Plan subscribed successfully");
-      return newSubscription;
+      
+      console.log("✅ Subscription updated successfully");
+      return { 
+        id: userId, 
+        ...existingSubscription, 
+        ...updateData,
+        transaction: transaction ? { id: transaction.id } : null
+      };
     }
+
+    console.log("📝 Creating new subscription");
+    const newSubscription = await createSubscription(userId, plan);
+    
+    await updateDoc(doc(db, 'users', userId), {
+      plan: plan,
+      updated_at: serverTimestamp(),
+    });
+    
+    await grantPlanBenefits(userId, plan, previousPlan || 'free', "New plan subscription");
+    
+    const planNames = { 
+      free: 'Free', 
+      pro: 'Pro', 
+      elite: 'Elite' 
+    };
+    
+    const benefitsText = plan === 'elite' 
+      ? 'unlimited overrides'
+      : plan === 'pro' 
+        ? '15 free overrides/month'
+        : 'basic features';
+    
+    await addUserActivity(userId, {
+      type: 'plan_subscription',
+      description: `Subscribed to ${planNames[plan]} plan (${benefitsText})`,
+      icon: '🎉',
+      color: 'green',
+      data: {
+        previousPlan: previousPlan || 'free',
+        newPlan: plan,
+        upgradedBy: 'user',
+        upgradeSource: 'website',
+        benefits: benefitsText,
+        amount_paid: planPrice,
+        transaction_id: transaction?.id
+      }
+    });
+    
+    console.log("✅ New subscription created successfully");
+    return {
+      ...newSubscription,
+      transaction: transaction ? { id: transaction.id } : null
+    };
   } catch (error) {
-    console.error("Error in updateUserSubscription:", error);
+    console.error("❌ Error in updateUserSubscription:", error);
     throw error;
   }
 };
@@ -675,10 +753,23 @@ export const purchaseOverrides = async (userId, quantity, amount) => {
     await new Promise(resolve => setTimeout(resolve, 1500));
     
     const overrideStats = await getUserOverrideStats(userId);
-    
     const newOverrideBalance = (overrideStats.overrides || 0) + quantity;
     const newTotalPurchased = (overrideStats.total_overrides_purchased || 0) + quantity;
     
+    // Create transaction first
+    const transaction = await createTransaction(userId, {
+      type: 'override_purchase',
+      amount: totalPrice,
+      description: `Purchased ${quantity} override${quantity > 1 ? 's' : ''}`,
+      payment_method: 'card',
+      metadata: {
+        quantity,
+        price_per_unit: pricePerOverride,
+        new_balance: newOverrideBalance
+      }
+    });
+
+    // Update override stats
     await updateDoc(doc(db, 'user_overrides', userId), {
       overrides: newOverrideBalance,
       total_overrides_purchased: newTotalPurchased,
@@ -686,26 +777,11 @@ export const purchaseOverrides = async (userId, quantity, amount) => {
       updated_at: serverTimestamp()
     });
     
-    const purchaseHistoryData = {
-      user_id: userId,
-      overrides_purchased: quantity,
-      amount_paid: totalPrice,
-      price_per_override: pricePerOverride,
-      transaction_id: `ovr_buy_${Date.now()}_${userId.substring(0, 8)}`,
-      payment_method: 'card',
-      timestamp: serverTimestamp(),
-      created_at: serverTimestamp()
-    };
-    
-    await addDoc(collection(db, 'override_purchases'), purchaseHistoryData);
-    
     console.log(`✅ Overrides purchased successfully: ${quantity} overrides`);
-    
-    await updateRevenueStats(totalPrice);
     
     return {
       success: true,
-      transactionId: purchaseHistoryData.transaction_id,
+      transactionId: transaction.transaction_id,
       overridesAdded: quantity,
       newOverrideBalance,
       amount: totalPrice,
@@ -791,10 +867,11 @@ export const getUserStatistics = async (userId) => {
 
 export const getDashboardData = async (userId) => {
   try {
-    const [userProfile, blockedSites, subscription] = await Promise.all([
+    const [userProfile, blockedSites, subscription, transactions] = await Promise.all([
       getUserProfile(userId),
       getBlockedSites(userId),
-      getUserSubscription(userId)
+      getUserSubscription(userId),
+      getTransactions(userId, 5) // Get last 5 transactions for dashboard preview
     ]);
     
     const totalSites = blockedSites.length;
@@ -814,6 +891,20 @@ export const getDashboardData = async (userId) => {
       timeSpent: site.total_time_spent || 0,
       lastAccessed: site.last_accessed
     }));
+
+    // Calculate transaction summary
+    const transactionSummary = {
+      recent: transactions.map(t => ({
+        id: t.id,
+        type: t.type,
+        amount: t.amount,
+        description: t.description,
+        date: t.created_at,
+        status: t.status
+      })),
+      total_spent: transactions.reduce((sum, t) => t.status === 'completed' ? sum + t.amount : sum, 0),
+      last_transaction: transactions[0] || null
+    };
 
     const dashboardData = {
       stats: {
@@ -841,6 +932,8 @@ export const getDashboardData = async (userId) => {
         status: subscription?.status || 'active',
         features: getFeaturesByPlan(subscription?.plan || 'free')
       },
+
+      transactions: transactionSummary,
       
       lastUpdated: new Date()
     };
@@ -1037,196 +1130,43 @@ const getNextMidnight = () => {
   return tomorrow;
 };
 
-// export const grantMonthlyFreeOverrides = async (userId) => {
-//   try {
-//     const subscription = await getUserSubscription(userId);
-//     const userPlan = subscription?.plan || 'free';
-    
-//     if (userPlan !== 'pro') {
-//       return { success: true, message: 'No monthly overrides for this plan' };
-//     }
-    
-//     const now = new Date();
-//     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    
-//     const overrideStats = await getUserOverrideStats(userId);
-//     const monthlyStats = overrideStats.monthly_stats?.[currentMonth] || {};
-    
-//     if (monthlyStats.monthly_grant_given) {
-//       return { success: true, message: 'Monthly overrides already granted' };
-//     }
-    
-//     const freeOverridesToGrant = 15;
-//     const newOverrideBalance = (overrideStats.overrides || 0) + freeOverridesToGrant;
-//     const newTotalOverrides = (overrideStats.total_overrides_purchased || 0) + freeOverridesToGrant;
-    
-//     await updateDoc(doc(db, 'user_overrides', userId), {
-//       overrides: newOverrideBalance,
-//       total_overrides_purchased: newTotalOverrides,
-//       monthly_stats: {
-//         ...overrideStats.monthly_stats,
-//         [currentMonth]: {
-//           ...monthlyStats,
-//           monthly_grant_given: true,
-//           free_overrides_granted: freeOverridesToGrant,
-//           grant_date: serverTimestamp()
-//         }
-//       },
-//       updated_at: serverTimestamp()
-//     });
-    
-//     console.log(`✅ Granted ${freeOverridesToGrant} monthly overrides to Pro user ${userId}`);
-    
-//     return {
-//       success: true,
-//       overridesGranted: freeOverridesToGrant,
-//       newBalance: newOverrideBalance,
-//       message: `Granted ${freeOverridesToGrant} monthly overrides for Pro plan`
-//     };
-    
-//   } catch (error) {
-//     console.error('Error granting monthly free overrides:', error);
-//     throw error;
-//   }
-// };
-
-// export const migrateBlockedSitesToNewSchema = async (userId) => {
-//   try { 
-//     const q = query(
-//       collection(db, 'blocked_sites'),
-//       where('user_id', '==', userId)
-//     );
-    
-//     const querySnapshot = await getDocs(q);
-//     const migrationTasks = [];
-//     const sitesToDelete = [];
-    
-//     for (const docSnapshot of querySnapshot.docs) {
-//       const oldData = docSnapshot.data();
-//       const oldDocId = docSnapshot.id;
-      
-//       const normalizedDomain = normalizeDomain(oldData.url);
-//       const newDocId = `${userId}_${normalizedDomain}`;
-      
-//       const newDocRef = doc(db, 'blocked_sites', newDocId);
-//       const newDocSnapshot = await getDoc(newDocRef);
-      
-//       if (!newDocSnapshot.exists()) {
-//         const newSiteDoc = {
-//           user_id: userId,
-//           url: normalizedDomain,
-//           name: oldData.name || normalizedDomain,
-          
-//           time_limit: oldData.time_limit || 1800,
-//           time_remaining: oldData.time_remaining || oldData.time_limit || 1800,
-//           time_spent_today: oldData.time_spent_today || 0,
-//           last_reset_date: oldData.last_reset_date || new Date().toISOString().split('T')[0],
-          
-//           is_blocked: oldData.is_blocked || false,
-//           is_active: oldData.is_active !== false,
-//           blocked_until: oldData.blocked_until || null,
-          
-//           schedule: oldData.schedule || null,
-          
-//           daily_usage: oldData.daily_usage || {},
-//           total_time_spent: oldData.total_time_spent || 0,
-//           access_count: oldData.access_count || 0,
-//           last_accessed: oldData.last_accessed || null,
-          
-//           override_active: oldData.override_active || false,
-//           override_initiated_by: oldData.override_initiated_by || null,
-//           override_initiated_at: oldData.override_initiated_at || null,
-          
-//           created_at: oldData.created_at || serverTimestamp(),
-//           updated_at: serverTimestamp(),
-//         };
-        
-//         migrationTasks.push(setDoc(newDocRef, newSiteDoc));
-//         sitesToDelete.push(oldDocId);
-        
-//         console.log(`📝 Migrating: ${oldData.url} -> ${newDocId}`);
-//       } else {
-//         console.log(`⚠️ Document already exists with new ID: ${newDocId}, skipping migration for ${oldDocId}`);
-//         if (oldDocId !== newDocId) {
-//           sitesToDelete.push(oldDocId);
-//         }
-//       }
-//     }
-    
-//     if (migrationTasks.length > 0) {
-//       await Promise.all(migrationTasks);
-//       console.log(`✅ Created ${migrationTasks.length} new documents`);
-//     }
-    
-//     const deactivateOldTasks = sitesToDelete
-//       .filter(oldId => !oldId.includes('_'))
-//       .map(oldId => updateDoc(doc(db, 'blocked_sites', oldId), {
-//         is_active: false,
-//         updated_at: serverTimestamp(),
-//       }));
-    
-//     if (deactivateOldTasks.length > 0) {
-//       await Promise.all(deactivateOldTasks);
-//       console.log(`🚫 Deactivated ${deactivateOldTasks.length} old documents (soft delete)`);
-//     }
-    
-//     console.log(`✅ Migration completed for user ${userId}`);
-//     return {
-//       migrated: migrationTasks.length,
-//       deactivated: deactivateOldTasks.length,
-//       skipped: querySnapshot.size - migrationTasks.length - deactivateOldTasks.length
-//     };
-    
-//   } catch (error) {
-//     console.error('Error during migration:', error);
-//     throw error;
-//   }
-// };
-
-// export const checkIfUserNeedsMigration = async (userId) => {
-//   try {
-//     const q = query(
-//       collection(db, 'blocked_sites'),
-//       where('user_id', '==', userId)
-//     );
-    
-//     const querySnapshot = await getDocs(q);
-//     let needsMigration = false;
-    
-//     querySnapshot.forEach((doc) => {
-//       const docId = doc.id;
-//       const data = doc.data();
-      
-//       const expectedId = `${userId}_${normalizeDomain(data.url)}`;
-//       if (docId !== expectedId) {
-//         needsMigration = true;
-//       }
-      
-//       if (!data.hasOwnProperty('daily_usage') || 
-//           !data.hasOwnProperty('total_time_spent') || 
-//           !data.hasOwnProperty('access_count') || 
-//           !data.hasOwnProperty('override_active')) {
-//         needsMigration = true;
-//       }
-//     });
-    
-//     return needsMigration;
-//   } catch (error) {
-//     console.error('Error checking migration status:', error);
-//     return false;
-//   }
-// };
-
 export const getUserAnalytics = async (userId) => {
   try {
-    const [userProfile, subscription] = await Promise.all([
+    const [userProfile, subscription, transactions] = await Promise.all([
       getUserProfile(userId),
-      getUserSubscription(userId)
+      getUserSubscription(userId),
+      getTransactions(userId, 10)  // Get last 50 transactions for analysis
     ]);
     
     const plan = subscription?.plan || userProfile?.plan || 'free';
     const planLimits = getPlanAnalyticsLimits(plan);
     
+    // Calculate transaction stats
+    const transactionStats = {
+      total_spent: 0,
+      total_transactions: transactions.length,
+      by_type: {},
+      recent_transactions: transactions.slice(0, 5),
+      spending_history: {},
+      average_transaction: 0
+    };
+
+    // Group transactions by month for spending history
+    transactions.forEach(txn => {
+      if (txn.status === 'completed') {
+        transactionStats.total_spent += txn.amount;
+        transactionStats.by_type[txn.type] = (transactionStats.by_type[txn.type] || 0) + 1;
+
+        // Add to spending history by month
+        const month = new Date(txn.created_at.seconds * 1000).toISOString().slice(0, 7);
+        transactionStats.spending_history[month] = (transactionStats.spending_history[month] || 0) + txn.amount;
+      }
+    });
+
+    transactionStats.average_transaction = 
+      transactionStats.total_transactions > 0 ? 
+      transactionStats.total_spent / transactionStats.total_transactions : 0;
+
     const [
       siteAnalytics,
       overrideStats,
@@ -1253,6 +1193,7 @@ export const getUserAnalytics = async (userId) => {
       overrides: overrideStats,
       history: usageHistory,
       timeSpent: timeSpentAnalytics,
+      transactions: transactionStats,
       lastUpdated: new Date()
     };
     
@@ -1531,48 +1472,6 @@ const calculateBlockedSessions = (sites) => {
   }, 0);
 };
 
-// export const exportAnalyticsData = async (userId, format = 'json') => {
-//   try {
-//     const analytics = await getUserAnalytics(userId);
-    
-//     if (analytics.plan === 'free') {
-//       throw new Error('Analytics export is only available for Pro and Elite subscribers');
-//     }
-    
-//     const exportData = {
-//       exportDate: new Date().toISOString(),
-//       plan: analytics.plan,
-//       user: analytics.user,
-//       sites: analytics.sites,
-//       overrides: analytics.overrides,
-//       summary: {
-//         totalSites: analytics.sites.length,
-//         totalTimeSpent: analytics.timeSpent.totalLifetimeSpent,
-//         timeSaved: analytics.timeSpent.timeSaved,
-//         productivityScore: analytics.timeSpent.productivityScore
-//       }
-//     };
-    
-//     if (format === 'csv') {
-//       return convertAnalyticsToCSV(exportData);
-//     }
-    
-//     return exportData;
-    
-//   } catch (error) {
-//     console.error("Error exporting analytics data:", error);
-//     throw error;
-//   }
-// };
-
-// const convertAnalyticsToCSV = (data) => {
-//   const headers = Object.keys(data).join(',');
-//   const values = Object.values(data).map(val => 
-//     typeof val === 'object' ? JSON.stringify(val) : val
-//   ).join(',');
-//   return `${headers}\n${values}`;
-// };
-
 export const getAllUsers = async (lastDoc = null, limit = 10) => {
   try {
     const usersCollection = collection(db, 'users');
@@ -1611,8 +1510,7 @@ export const getAllUsers = async (lastDoc = null, limit = 10) => {
 };
 
 export const getUserDetails = async (userId) => {
-  try {
-    
+  try {    
     const userProfile = await getUserProfile(userId);
     
     const subscription = await getUserSubscription(userId);
@@ -1649,22 +1547,12 @@ export const getUserDetails = async (userId) => {
 export const adminUpdateUserProfile = async (userId, updateData) => {
   try {
     
-    // const userRef = doc(db, 'users', userId);
-    
-    // const userDoc = await getDoc(userRef);
-    // if (!userDoc.exists()) {
-    //   throw new Error(`User ${userId} not found in users collection`);
-    // }
-    
-    // console.log(`📋 Current user data before update:`, userDoc.data());
-    
     await updateDoc(userRef, {
       ...updateData,
       updated_at: serverTimestamp(),
     });
     
     await getDoc(userRef);
-    // console.log(`✅ Admin: User profile updated successfully. New data:`, updatedDoc.data());
     
     return await getUserProfile(userId);
   } catch (error) {
@@ -1859,19 +1747,10 @@ export const grantPlanBenefits = async (userId, newPlan, previousPlan = 'free', 
     
     await updateDoc(userRef, {
       plan: newPlan,
-      // plan_features: newBenefits.features,
       sites_limit: newBenefits.sites_limit,
       devices_limit: newBenefits.devices_limit,
       lockout_duration: newBenefits.lockout_duration,
       monthly_overrides: newBenefits.monthly_overrides,
-      // plan_benefits_granted_at: serverTimestamp(),
-      // last_plan_change: {
-      //   from: previousPlan,
-      //   to: newPlan,
-      //   changed_at: serverTimestamp(),
-      //   benefits_granted: newBenefits,
-      //   override_action: resetToZero ? 'reset' : overridesToGrant > 0 ? 'granted' : 'preserved'
-      // },
       updated_at: serverTimestamp()
     });
     
@@ -2075,17 +1954,75 @@ export const adminDeleteDocument = async (collectionName, documentId, createAudi
 
 export const adminGetSystemStats = async () => {
   try {
-    const stats = await getAdminStats();
-    
-    const auditLogs = await getDocs(collection(db, 'admin_audit_log'));
-    
-    return {
+    const [stats, recentTransactions] = await Promise.all([
+      getAdminStats(),
+      getTransactions(null, 10)
+    ]);
+
+    // Calculate transaction trends
+    const transactionTrends = {
+      recent_transactions: recentTransactions.map(t => ({
+        id: t.id,
+        user_id: t.user_id,
+        type: t.type,
+        amount: t.amount,
+        status: t.status,
+        date: t.created_at,
+        description: t.description,
+        formattedAmount: new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: 'USD'
+        }).format(t.amount || 0),
+        formattedDate: formatActivityTimestamp(t.created_at)
+      })),
+      daily_volume: {},
+      payment_methods: {},
+      success_rate: 0,
+      transaction_types: {}
+    };
+
+    // Calculate success rate and transaction types
+    const completedTransactions = recentTransactions.filter(t => t.status === 'completed').length;
+    transactionTrends.success_rate = (completedTransactions / recentTransactions.length) * 100;
+
+    recentTransactions.forEach(t => {
+      // Count by payment method
+      transactionTrends.payment_methods[t.payment_method] = 
+        (transactionTrends.payment_methods[t.payment_method] || 0) + 1;
+      
+      // Count by transaction type
+      transactionTrends.transaction_types[t.type] = 
+        (transactionTrends.transaction_types[t.type] || 0) + 1;
+
+      // Group by day for volume trend
+      const day = new Date(t.created_at.seconds * 1000).toISOString().split('T')[0];
+      transactionTrends.daily_volume[day] = (transactionTrends.daily_volume[day] || 0) + t.amount;
+    });
+
+    const enhancedStats = {
       ...stats,
-      audit: {
-        totalLogs: auditLogs.size
+      transactions: {
+        ...stats.transactions,
+        trends: transactionTrends,
+        summary: {
+          total_volume: recentTransactions.reduce((sum, t) => sum + (t.amount || 0), 0),
+          average_transaction: recentTransactions.length > 0 ? 
+            recentTransactions.reduce((sum, t) => sum + (t.amount || 0), 0) / recentTransactions.length : 0,
+          success_rate: transactionTrends.success_rate,
+          most_common_type: Object.entries(transactionTrends.transaction_types)
+            .sort((a, b) => b[1] - a[1])[0]?.[0] || 'none'
+        }
+      },
+      revenue: {
+        ...stats.revenue,
+        daily_trend: transactionTrends.daily_volume,
+        by_payment_method: transactionTrends.payment_methods,
+        by_type: transactionTrends.transaction_types
       },
       generatedAt: new Date().toISOString()
     };
+
+    return enhancedStats;
   } catch (error) {
     console.error("❌ Admin error getting system stats:", error);
     throw error;
@@ -2250,9 +2187,11 @@ export const getUserRecentActivity = async (userId) => {
 
 export const getUserDetailsWithActivity = async (userId) => {
   try {    
-    const userDetails = await getUserDetails(userId);
-    
-    const recentActivity = await getUserRecentActivity(userId);
+    const [userDetails, recentActivity, transactions] = await Promise.all([
+      getUserDetails(userId),
+      getUserRecentActivity(userId),
+      getTransactions(userId, 10)
+    ]);
     
     const subscriptionRef = doc(db, 'subscriptions', userId);
     const subscriptionDoc = await getDoc(subscriptionRef);
@@ -2271,11 +2210,34 @@ export const getUserDetailsWithActivity = async (userId) => {
         });
       }
     }
+
+    // Add transaction history
+    const transactionHistory = transactions.map(t => ({
+      type: 'transaction',
+      description: t.description,
+      timestamp: t.created_at,
+      amount: t.amount,
+      status: t.status,
+      icon: t.type === 'plan_purchase' ? '💳' : '⚡',
+      color: t.status === 'completed' ? 'green' : 'yellow',
+      metadata: t.metadata
+    }));
     
     const enhancedDetails = {
       ...userDetails,
       recentActivity: recentActivity,
       subscriptionHistory: subscriptionHistory,
+      transactionHistory: transactionHistory,
+      spending: {
+        total: transactions.reduce((sum, t) => t.status === 'completed' ? sum + t.amount : sum, 0),
+        by_type: transactions.reduce((acc, t) => {
+          if (t.status === 'completed') {
+            acc[t.type] = (acc[t.type] || 0) + t.amount;
+          }
+          return acc;
+        }, {}),
+        recent_transactions: transactions.slice(0, 5)
+      },
       lastActivity: recentActivity.length > 0 ? recentActivity[0] : null
     };
     
@@ -2383,8 +2345,13 @@ export const initializeAdminStats = async () => {
         revenue: {
           total: 0,
           byPlan: { pro: 0, elite: 0 },
-          byOverrides: 0,
           lastPurchase: null
+        },
+        transactions: {
+          total: 0,
+          byType: {},
+          byStatus: {},
+          byPaymentMethod: {}
         },
         lastUpdated: serverTimestamp()
       });
@@ -2472,11 +2439,10 @@ export const getAdminStats = async () => {
 
 export const recalculateAllStats = async () => {
   try {    
-    const [usersSnap, sitesSnap, purchasesSnap, overridePurchasesSnap] = await Promise.all([
+    const [usersSnap, sitesSnap, transactionsSnap] = await Promise.all([
       getDocs(collection(db, 'users')),
       getDocs(collection(db, 'blocked_sites')),
-      getDocs(collection(db, 'plan_purchases')),
-      getDocs(collection(db, 'override_purchases'))
+      getDocs(collection(db, 'transactions'))
     ]);
 
     const stats = {
@@ -2490,8 +2456,13 @@ export const recalculateAllStats = async () => {
       revenue: {
         total: 0,
         byPlan: { pro: 0, elite: 0 },
-        byOverrides: 0,
         lastPurchase: null
+      },
+      transactions: {
+        total: 0,
+        byType: {},
+        byStatus: {},
+        byPaymentMethod: {}
       },
       lastUpdated: serverTimestamp()
     };
@@ -2501,28 +2472,32 @@ export const recalculateAllStats = async () => {
       stats.users.byPlan[plan] = (stats.users.byPlan[plan] || 0) + 1;
     });
 
-    // Calculate plan purchase revenue
-    purchasesSnap.forEach(doc => {
-      const data = doc.data();
-      if (data.amount_paid) {
-        stats.revenue.total += data.amount_paid;
-        if (data.plan && stats.revenue.byPlan[data.plan] !== undefined) {
-          stats.revenue.byPlan[data.plan] += data.amount_paid;
+    // Calculate revenue and transaction stats from all transactions
+    transactionsSnap.forEach(doc => {
+      const transaction = doc.data();
+      
+      // Update transaction stats
+      stats.transactions.total++;
+      stats.transactions.byType[transaction.type] = (stats.transactions.byType[transaction.type] || 0) + 1;
+      stats.transactions.byStatus[transaction.status] = (stats.transactions.byStatus[transaction.status] || 0) + 1;
+      stats.transactions.byPaymentMethod[transaction.payment_method] = 
+        (stats.transactions.byPaymentMethod[transaction.payment_method] || 0) + 1;
+      
+      // Update revenue stats for completed transactions
+      if (transaction.status === 'completed') {
+        stats.revenue.total += transaction.amount;
+        
+        if (transaction.type === 'plan_purchase' && transaction.metadata?.new_plan) {
+          const plan = transaction.metadata.new_plan;
+          if (stats.revenue.byPlan[plan] !== undefined) {
+            stats.revenue.byPlan[plan] += transaction.amount;
+          }
         }
-        if (!stats.revenue.lastPurchase || data.timestamp > stats.revenue.lastPurchase) {
-          stats.revenue.lastPurchase = data.timestamp;
-        }
-      }
-    });
 
-    // Calculate override purchase revenue
-    overridePurchasesSnap.forEach(doc => {
-      const data = doc.data();
-      if (data.amount_paid) {
-        stats.revenue.total += data.amount_paid;
-        stats.revenue.byOverrides += data.amount_paid;
-        if (!stats.revenue.lastPurchase || data.timestamp > stats.revenue.lastPurchase) {
-          stats.revenue.lastPurchase = data.timestamp;
+        // Track most recent purchase
+        if (!stats.revenue.lastPurchase || 
+            transaction.created_at > stats.revenue.lastPurchase) {
+          stats.revenue.lastPurchase = transaction.created_at;
         }
       }
     });
@@ -2536,28 +2511,49 @@ export const recalculateAllStats = async () => {
   }
 };
 
-const updateRevenueStats = async (amount, type = 'override') => {
+const updateRevenueStats = async (amount, type, transactionDetails) => {
   const statsRef = doc(db, 'admin_stats', 'global');
 
   try {
     await runTransaction(db, async (transaction) => {
       const statsDoc = await transaction.get(statsRef);
-      let stats = statsDoc.exists() ? statsDoc.data() : await initializeAdminStats();
+      let stats = statsDoc.exists() ? statsDoc.data() : {};
 
-      // Update total revenue
-      stats.revenue.total += amount;
-
-      // Update specific revenue type
-      if (type === 'override') {
-        stats.revenue.byOverrides += amount;
-      } else if (type === 'pro' || type === 'elite') {
-        stats.revenue.byPlan[type] += amount;
+      // Initialize stats if they don't exist
+      if (!stats.revenue) {
+        stats.revenue = {
+          total: 0,
+          byPlan: { pro: 0, elite: 0 },
+          lastPurchase: null
+        };
+      }
+      if (!stats.transactions) {
+        stats.transactions = {
+          total: 0,
+          byType: {},
+          byStatus: {},
+          byPaymentMethod: {}
+        };
       }
 
-      // Update last purchase timestamp
+      // Update revenue stats
+      stats.revenue.total += amount;
+      if (type === 'override') {
+        stats.revenue.byOverrides = (stats.revenue.byOverrides || 0) + amount;
+      } else if (type === 'pro' || type === 'elite') {
+        stats.revenue.byPlan[type] = (stats.revenue.byPlan[type] || 0) + amount;
+      }
       stats.revenue.lastPurchase = serverTimestamp();
-      stats.lastUpdated = serverTimestamp();
+
+      // Update transaction stats
+      stats.transactions.total++;
       
+      // Initialize counters if they don't exist
+      stats.transactions.byType[transactionDetails.type] = (stats.transactions.byType[transactionDetails.type] || 0) + 1;
+      stats.transactions.byStatus[transactionDetails.status] = (stats.transactions.byStatus[transactionDetails.status] || 0) + 1;
+      stats.transactions.byPaymentMethod[transactionDetails.payment_method] = (stats.transactions.byPaymentMethod[transactionDetails.payment_method] || 0) + 1;
+
+      stats.lastUpdated = serverTimestamp();
       transaction.set(statsRef, stats);
     });
   } catch (error) {
@@ -2566,89 +2562,282 @@ const updateRevenueStats = async (amount, type = 'override') => {
   }
 };
 
-export const adminGetDocumentIds = async (collectionName, searchTerm = '') => {
-  try {    
-    if (!searchTerm) {
-      return [];
+export const createTransaction = async (userId, transactionData) => {
+  try {
+    // Validate required fields
+    if (!userId || !transactionData.type || !transactionData.amount) {
+      throw new Error('Missing required transaction fields');
     }
 
-    const searchLower = searchTerm.toLowerCase();
-    let documents = [];
+    // Create metadata object only with defined values
+    const metadata = {};
+    if (transactionData.metadata?.quantity) metadata.quantity = transactionData.metadata.quantity;
+    if (transactionData.metadata?.price_per_unit) metadata.price_per_unit = transactionData.metadata.price_per_unit;
+    if (transactionData.metadata?.previous_plan) metadata.previous_plan = transactionData.metadata.previous_plan;
+    if (transactionData.metadata?.new_plan) metadata.new_plan = transactionData.metadata.new_plan;
 
-    if (!searchTerm.includes(' ') && !searchTerm.includes('@') && !searchTerm.includes('.')) {
-      const docRef = doc(db, collectionName, searchTerm);
-      const docSnap = await getDoc(docRef);
-      
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        return [{
-          id: docSnap.id,
-          name: data.name || data.profile_name || undefined,
-          email: data.profile_email || undefined,
-          url: data.url || undefined,
-          created_at: data.created_at || undefined
-        }];
-      } 
-      return [];
-    }
+    const transaction = {
+      user_id: userId,
+      type: transactionData.type,
+      amount: transactionData.amount,
+      description: transactionData.description,
+      status: transactionData.status || 'completed',
+      payment_method: transactionData.payment_method || 'card',
+      metadata,
+      created_at: serverTimestamp()
+    };
 
-    const collectionRef = collection(db, collectionName);
-    let queryRef;
+    // Create the transaction
+    const transactionRef = doc(collection(db, 'transactions'));
+    await setDoc(transactionRef, transaction);
 
-    if (searchLower.includes('@')) {
-      queryRef = query(collectionRef, 
-        where('profile_email', '==', searchTerm),
-        firestoreLimit(1)
-      );
-    }
-    else if (searchLower.includes('.') || searchLower.includes('/')) {
-      queryRef = query(collectionRef, 
-        where('url', '==', searchTerm),
-        firestoreLimit(1)
-      );
-    }
-    else {
-      queryRef = query(collectionRef,
-        where('name', '==', searchTerm),
-        firestoreLimit(1)
-      );
-    }
-
-    const snapshot = await getDocs(queryRef);
-    
-    if (!snapshot.empty) {
-      const doc = snapshot.docs[0];
-      const data = doc.data();
-      documents.push({
-        id: doc.id,
-        name: data.name || data.profile_name || undefined,
-        email: data.profile_email || undefined,
-        url: data.url || undefined,
-        created_at: data.created_at || undefined
+    // Update user's money_spent field
+    if (transaction.status === 'completed') {
+      const userRef = doc(db, 'users', userId);
+      await runTransaction(db, async (transaction) => {
+        const userDoc = await transaction.get(userRef);
+        if (!userDoc.exists()) {
+          throw new Error('User document does not exist!');
+        }
+        
+        const currentSpent = userDoc.data().money_spent || 0;
+        transaction.update(userRef, {
+          money_spent: currentSpent + transactionData.amount,
+          updated_at: serverTimestamp()
+        });
       });
     }
-    
-    return documents;
+
+    return {
+      id: transactionRef.id,
+      ...transaction
+    };
   } catch (error) {
-    console.error(`❌ Admin error searching for document:`, error);
+    console.error("Error creating transaction:", error);
     throw error;
   }
 };
 
-export const adminGetDocument = async (collectionName, documentId) => {
+export const getTransactions = async (userId = null, limit = 10) => {
   try {
-    const docRef = doc(db, collectionName, documentId);
-    const docSnap = await getDoc(docRef);
+    let transactionsQuery;
+    if (userId) {
+      transactionsQuery = query(
+        collection(db, 'transactions'),
+        where('user_id', '==', userId),
+        firestoreOrderBy('created_at', 'desc'),
+        firestoreLimit(limit)
+      );
+    } else {
+      transactionsQuery = query(
+        collection(db, 'transactions'),
+        firestoreOrderBy('created_at', 'desc'),
+        firestoreLimit(limit)
+      );
+    }
+
+    const snapshot = await getDocs(transactionsQuery);
+    const transactions = [];
     
-    if (!docSnap.exists()) {
-      throw new Error(`Document ${documentId} not found in ${collectionName}`);
+    snapshot.forEach(doc => {
+      transactions.push({
+        id: doc.id,
+        ...doc.data()
+      });
+    });
+
+    return transactions;
+  } catch (error) {
+    console.error("Error fetching transactions:", error);
+    throw error;
+  }
+};
+
+export const adminGetAllTransactions = async (lastDoc = null, limit = 10) => {
+  try {
+    const transactionsCollection = collection(db, 'transactions');
+    
+    let transactionsQuery;
+    if (lastDoc) {
+      transactionsQuery = query(
+        transactionsCollection,
+        firestoreOrderBy('created_at', 'desc'),
+        startAfter(lastDoc),
+        firestoreLimit(limit)
+      );
+    } else {
+      transactionsQuery = query(
+        transactionsCollection,
+        firestoreOrderBy('created_at', 'desc'),
+        firestoreLimit(limit)
+      );
     }
     
-    const document = { id: docSnap.id, ...docSnap.data() }; 
-    return document;
+    const transactionsSnapshot = await getDocs(transactionsQuery);
+    
+    const transactions = [];
+    transactionsSnapshot.forEach((doc) => {
+      transactions.push({ 
+        id: doc.id, 
+        ...doc.data(),
+        formattedAmount: new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: 'USD'
+        }).format(doc.data().amount || 0),
+        formattedDate: formatActivityTimestamp(doc.data().created_at)
+      });
+    });
+    
+    const lastVisible = transactionsSnapshot.docs[transactionsSnapshot.docs.length - 1];
+    
+    return { transactions, lastDoc: lastVisible };
   } catch (error) {
-    console.error(`❌ Admin error fetching document:`, error);
+    console.error("❌ Admin error fetching all transactions:", error);
     throw error;
   }
 };
 
+export const adminSearchTransactions = async (searchTerm) => {
+  try {
+    const { transactions } = await adminGetAllTransactions(null, 100);
+    
+    const filteredTransactions = transactions.filter(transaction => 
+      transaction.user_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      transaction.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      transaction.type?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      transaction.transaction_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      transaction.formattedAmount?.includes(searchTerm)
+    );
+    
+    return filteredTransactions;
+  } catch (error) {
+    console.error("❌ Admin error searching transactions:", error);
+    throw error;
+  }
+};
+
+export const adminGetTransactionDetails = async (transactionId) => {
+  try {
+    const transactionDoc = await getDoc(doc(db, 'transactions', transactionId));
+    if (!transactionDoc.exists()) {
+      throw new Error('Transaction not found');
+    }
+
+    const transaction = transactionDoc.data();
+    
+    // Get user details for this transaction
+    const userDoc = await getDoc(doc(db, 'users', transaction.user_id));
+    const userData = userDoc.exists() ? userDoc.data() : null;
+
+    return {
+      id: transactionDoc.id,
+      ...transaction,
+      user: userData ? {
+        id: userData.id,
+        email: userData.profile_email,
+        name: userData.profile_name,
+        plan: userData.plan
+      } : null,
+      formattedAmount: new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD'
+      }).format(transaction.amount || 0),
+      formattedDate: formatActivityTimestamp(transaction.created_at)
+    };
+  } catch (error) {
+    console.error("❌ Admin error getting transaction details:", error);
+    throw error;
+  }
+};
+
+export const ensureUserProfile = async (userId) => {
+  try {
+    const userDoc = await getDoc(doc(db, 'users', userId));
+    
+    if (!userDoc.exists()) {
+      // Create new profile if it doesn't exist
+      return await createUserProfile(userId, {});
+    }
+
+    const userData = userDoc.data();
+    const updates = {};
+    
+    // Check and add missing fields
+    if (userData.plan === undefined) updates.plan = 'free';
+    if (userData.subscription_status === undefined) updates.subscription_status = 'active';
+    if (userData.override_balance === undefined) updates.override_balance = 0;
+    if (userData.total_spent === undefined) updates.total_spent = 0;
+    if (userData.last_purchase === undefined) updates.last_purchase = null;
+    if (!userData.settings) {
+      updates.settings = {
+        notifications: true,
+        theme: 'light',
+        email_updates: true
+      };
+    }
+    
+    // Only update if there are missing fields
+    if (Object.keys(updates).length > 0) {
+      await updateDoc(doc(db, 'users', userId), {
+        ...updates,
+        updated_at: serverTimestamp()
+      });
+    }
+
+    // Ensure subscription document exists
+    const subscriptionDoc = await getDoc(doc(db, 'subscriptions', userId));
+    if (!subscriptionDoc.exists()) {
+      const subscriptionData = {
+        user_id: userId,
+        plan: userData.plan || 'free',
+        status: 'active',
+        started_at: serverTimestamp(),
+        expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      };
+      await setDoc(doc(db, 'subscriptions', userId), subscriptionData);
+    }
+
+    return await getUserProfile(userId);
+  } catch (error) {
+    console.error("Error ensuring user profile:", error);
+    throw error;
+  }
+};
+
+// Add this new function to initialize or update money_spent
+export const initializeUserProfile = async (userId, userData) => {
+  try {
+    const userRef = doc(db, 'users', userId);
+    const userDoc = await getDoc(userRef);
+
+    if (!userDoc.exists()) {
+      // New user - initialize with default values
+      await setDoc(userRef, {
+        ...userData,
+        money_spent: 0,
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp()
+      });
+    } else if (userDoc.data().money_spent === undefined) {
+      // Existing user but no money_spent field - calculate from transactions
+      const transactionsQuery = query(
+        collection(db, 'transactions'),
+        where('user_id', '==', userId),
+        where('status', '==', 'completed')
+      );
+      
+      const transactionsSnapshot = await getDocs(transactionsQuery);
+      const totalSpent = transactionsSnapshot.docs.reduce((sum, doc) => sum + (doc.data().amount || 0), 0);
+      
+      await updateDoc(userRef, {
+        money_spent: totalSpent,
+        updated_at: serverTimestamp()
+      });
+    }
+  } catch (error) {
+    console.error("Error initializing user profile:", error);
+    throw error;
+  }
+};

@@ -11,6 +11,7 @@ import SiteManager from "../../components/SiteManager";
 import BlockedSitesModal from "../../components/BlockedSitesModal";
 import { useAuth } from "../../context/AuthContext";
 import { getUserSubscription, getDashboardData, getUserOverrideStats } from "../../lib/firebase";
+import UserTransactions from '@/components/UserTransactions';
 
 export default function Dashboard() {
   const { user, userStats, blockedSites, loading, logout, refreshUserData } = useAuth();
@@ -26,6 +27,36 @@ export default function Dashboard() {
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [overrideStats, setOverrideStats] = useState(null);
   const [overridePurchaseSuccess, setOverridePurchaseSuccess] = useState(false);
+  const [activeTab, setActiveTab] = useState('sites');
+
+  // Define fetchDashboardData outside useEffect
+  const fetchDashboardData = async () => {
+    if (user?.uid) {
+      try {
+        console.log("📊 Loading dashboard data...");
+        setIsLoading(true);
+        
+        // Fetch enhanced dashboard data, subscription, and override stats in parallel
+        const [dashData, subData, overrideData] = await Promise.all([
+          getDashboardData(user.uid),
+          getUserSubscription(user.uid),
+          getUserOverrideStats(user.uid)
+        ]);
+        
+        console.log("📈 Dashboard data loaded:", dashData);
+        console.log("🎯 Override stats loaded:", overrideData);
+        
+        setDashboardData(dashData);
+        setSubscription(subData);
+        setOverrideStats(overrideData);
+        
+      } catch (error) {
+        console.error("❌ Error fetching dashboard data:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
 
   useEffect(() => {
     // Check for payment/purchase success from URL parameters
@@ -48,21 +79,7 @@ export default function Dashboard() {
         
         // Also refresh dashboard data to show updated subscription info
         if (user?.uid) {
-          const fetchUpdatedData = async () => {
-            try {
-              const [dashData, subData, overrideData] = await Promise.all([
-                getDashboardData(user.uid),
-                getUserSubscription(user.uid),
-                getUserOverrideStats(user.uid)
-              ]);
-              setDashboardData(dashData);
-              setSubscription(subData);
-              setOverrideStats(overrideData);
-            } catch (error) {
-              console.error("Error refreshing dashboard data:", error);
-            }
-          };
-          fetchUpdatedData();
+          fetchDashboardData();
         }
         
         // Hide the message after 5 seconds
@@ -102,33 +119,6 @@ export default function Dashboard() {
     }
 
     // Fetch all dashboard data if user exists
-    const fetchDashboardData = async () => {
-      if (user?.uid) {
-        try {
-          console.log("📊 Loading dashboard data...");
-          
-          // Fetch enhanced dashboard data, subscription, and override stats in parallel
-          const [dashData, subData, overrideData] = await Promise.all([
-            getDashboardData(user.uid),
-            getUserSubscription(user.uid),
-            getUserOverrideStats(user.uid)
-          ]);
-          
-          console.log("📈 Dashboard data loaded:", dashData);
-          console.log("🎯 Override stats loaded:", overrideData);
-          
-          setDashboardData(dashData);
-          setSubscription(subData);
-          setOverrideStats(overrideData);
-          
-        } catch (error) {
-          console.error("❌ Error fetching dashboard data:", error);
-        } finally {
-          setIsLoading(false);
-        }
-      }
-    };
-
     if (user) {
       fetchDashboardData();
     } else if (!loading) {
@@ -224,7 +214,7 @@ export default function Dashboard() {
         freeOverridesLimit = 15;
         break;
       case 'elite':
-        freeOverridesLimit = 999; // Unlimited
+        freeOverridesLimit = 200; // Unlimited
         break;
       default:
         freeOverridesLimit = 0; // Free plan gets 0 free overrides
@@ -396,6 +386,7 @@ export default function Dashboard() {
                       <div>
                         <p className="font-medium">{user?.profile_name || user?.name || 'User'}</p>
                         <p className="text-sm text-gray-600 dark:text-gray-400">{user?.profileEmail || user?.email}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">ID: {user?.uid}</p>
                       </div>
                     </div>
                     
@@ -441,7 +432,6 @@ export default function Dashboard() {
                   blockedSites={blockedSites}
                   overrideStats={overrideStats}
                   dashboardData={dashboardData}
-                  userStats={userStats}
                 />
               ) : (
                 <>
@@ -569,7 +559,7 @@ export default function Dashboard() {
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                             <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">
-                              {subscription?.plan === 'elite' ? '∞' : (overrideStats.overrides || 0)}
+                              {(overrideStats.overrides || 0)}
                             </div>
                             <div className="text-sm text-blue-700 dark:text-blue-300">Available Now</div>
                           </div>
@@ -748,6 +738,7 @@ export default function Dashboard() {
                                 <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
                                   {site.url}
                                 </p>
+                                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">ID: {site.id}</p>
                               </div>
                               <div className="flex items-center gap-2">
                                 <div className={`px-2 py-1 rounded text-xs font-medium ${
@@ -814,8 +805,51 @@ export default function Dashboard() {
         onEditSite={handleEditSite}
       />
 
+      {/* Navigation Tabs */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8">
+            <button
+              onClick={() => setActiveTab('sites')}
+              className={`${
+                activeTab === 'sites'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+            >
+              Sites
+            </button>
+            <button
+              onClick={() => setActiveTab('transactions')}
+              className={`${
+                activeTab === 'transactions'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+            >
+              Transactions
+            </button>
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={`${
+                activeTab === 'settings'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+            >
+              Settings
+            </button>
+          </nav>
+        </div>
+      </div>
 
-      
+      {/* Content Sections */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {activeTab === 'sites' && <SiteManager userId={user.uid} onUpdate={fetchDashboardData} />}
+        {activeTab === 'transactions' && <UserTransactions userId={user.uid} />}
+        {activeTab === 'settings' && <Settings userId={user.uid} />}
+      </div>
+
       <Footer />
     </>
   );

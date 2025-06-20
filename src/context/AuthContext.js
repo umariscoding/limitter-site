@@ -13,6 +13,7 @@ import {
   getBlockedSites,
   updateBlockedSite,
   removeBlockedSite,
+  ensureUserProfile,
 } from '../lib/firebase';
 
 const AuthContext = createContext();
@@ -50,107 +51,86 @@ export function AuthProvider({ children }) {
     setLoading(true);
 
     try {
-      console.log("📊 Fetching user profile for UID:", firebaseUser.uid);
-      
-      // Wait a bit for the auth session to be fully established
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Get additional user data from Firestore with timeout
-      console.log("⏱️ Starting getUserProfile with 8 second timeout...");
-      
-      const profileTimeout = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Profile fetch timeout')), 8000);
-      });
-      
-      const userProfile = await Promise.race([
-        getUserProfile(firebaseUser.uid),
-        profileTimeout
-      ]);
-      
-      console.log("📊 User profile from database:", userProfile);
-      
-      // Create new user object to ensure React detects the change
-      const newUser = {
-        uid: firebaseUser.uid,
-        id: firebaseUser.uid,
-        email: firebaseUser.email,
-        emailVerified: firebaseUser.emailVerified,
-        displayName: userProfile?.profile_name || firebaseUser.displayName,
-        ...(userProfile || {})
-      };
-      
-      console.log("✅ Setting user state to:", newUser);
-      setUser(newUser);
-
-      // Load user's blocked sites and calculate stats
-      try {
-        // Check if user needs migration to new schema
-        // const needsMigration = await checkIfUserNeedsMigration(firebaseUser.uid);
-        // if (needsMigration) {
-        //   console.log("🔄 User needs schema migration, starting migration...");
-        //   try {
-        //     const migrationResult = await migrateBlockedSitesToNewSchema(firebaseUser.uid);
-        //     console.log("✅ Migration completed:", migrationResult);
-        //   } catch (migrationError) {
-        //     console.error("❌ Migration failed:", migrationError);
-        //     // Continue loading even if migration fails
-        //   }
-        // }
+      if (firebaseUser) {
+        console.log("📊 Fetching user profile for UID:", firebaseUser.uid);
         
-        const sites = await getBlockedSites(firebaseUser.uid, true);
-        setBlockedSites(sites);
+        // Wait a bit for the auth session to be fully established
+        await new Promise(resolve => setTimeout(resolve, 100));
         
-        // Calculate stats from the data we already have
-        const totalSites = sites.length;
-        const activeSites = sites.filter(site => site.is_active !== false).length;
-        const totalTimeSpent = sites.reduce((sum, site) => sum + (site.total_time_spent || 0), 0);
-        const todayTimeSpent = sites.reduce((sum, site) => sum + (site.time_spent_today || 0), 0);
+        // Get additional user data from Firestore with timeout
+        console.log("⏱️ Starting getUserProfile with 8 second timeout...");
         
-        const stats = {
-          totalSitesBlocked: totalSites,
-          activeSitesBlocked: activeSites,
-          totalTimeSaved: userProfile?.total_time_saved || 0,
-          totalTimeSpent: totalTimeSpent,
-          todayTimeSpent: todayTimeSpent,
-          lastUpdated: new Date(),
+        const profileTimeout = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Profile fetch timeout')), 8000);
+        });
+        
+        // Use ensureUserProfile instead of getUserProfile
+        const userProfile = await Promise.race([
+          ensureUserProfile(firebaseUser.uid),
+          profileTimeout
+        ]);
+        
+        console.log("📊 User profile from database:", userProfile);
+        
+        // Create new user object to ensure React detects the change
+        const newUser = {
+          uid: firebaseUser.uid,
+          id: firebaseUser.uid,
+          email: firebaseUser.email,
+          emailVerified: firebaseUser.emailVerified,
+          displayName: userProfile?.profile_name || firebaseUser.displayName,
+          ...(userProfile || {})
         };
         
-        setUserStats(stats);
-      } catch (error) {
-        console.error("❌ Error loading user data:", error);
+        console.log("✅ Setting user state to:", newUser);
+        setUser(newUser);
+
+        // Load user's blocked sites and calculate stats
+        try {
+          // Check if user needs migration to new schema
+          // const needsMigration = await checkIfUserNeedsMigration(firebaseUser.uid);
+          // if (needsMigration) {
+          //   console.log("🔄 User needs schema migration, starting migration...");
+          //   try {
+          //     const migrationResult = await migrateBlockedSitesToNewSchema(firebaseUser.uid);
+          //     console.log("✅ Migration completed:", migrationResult);
+          //   } catch (migrationError) {
+          //     console.error("❌ Migration failed:", migrationError);
+          //     // Continue loading even if migration fails
+          //   }
+          // }
+          
+          const sites = await getBlockedSites(firebaseUser.uid, true);
+          setBlockedSites(sites);
+          
+          // Calculate stats from the data we already have
+          const totalSites = sites.length;
+          const activeSites = sites.filter(site => site.is_active !== false).length;
+          const totalTimeSpent = sites.reduce((sum, site) => sum + (site.total_time_spent || 0), 0);
+          const todayTimeSpent = sites.reduce((sum, site) => sum + (site.time_spent_today || 0), 0);
+          
+          const stats = {
+            totalSitesBlocked: totalSites,
+            activeSitesBlocked: activeSites,
+            totalTimeSaved: userProfile?.total_time_saved || 0,
+            totalTimeSpent: totalTimeSpent,
+            todayTimeSpent: todayTimeSpent,
+            lastUpdated: new Date(),
+          };
+          
+          setUserStats(stats);
+        } catch (error) {
+          console.error("❌ Error loading user data:", error);
+        }
+      } else {
+        setUser(null);
       }
-      
-      // Resolve any pending auth state promises
-      authStatePromiseResolvers.current.forEach(resolve => resolve(newUser));
-      authStatePromiseResolvers.current = [];
     } catch (error) {
-      console.error("❌ Error getting user profile:", error);
-      
-      // If it's a timeout, suggest database troubleshooting
-      if (error.message.includes('timeout')) {
-        console.log("🔧 Timeout detected - possible Firestore rules or connection issue");
-        console.log("🔧 Check your Firestore security rules and Firebase configuration");
-      }
-      
-      // Even if profile fetch fails, keep the Firebase user
-      const fallbackUser = {
-        uid: firebaseUser.uid,
-        id: firebaseUser.uid,
-        email: firebaseUser.email,
-        emailVerified: firebaseUser.emailVerified,
-        displayName: firebaseUser.displayName,
-        plan: 'free' // Default plan
-      };
-      console.log("⚠️ Setting fallback user state to:", fallbackUser);
-      setUser(fallbackUser);
-      
-      // Resolve any pending auth state promises with fallback user
-      authStatePromiseResolvers.current.forEach(resolve => resolve(fallbackUser));
-      authStatePromiseResolvers.current = [];
+      console.error("❌ Error in auth state change:", error);
+      setUser(null);
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
-    console.log("✅ Auth state update complete");
   };
 
   const waitForAuthStateChange = (timeout = 5000) => {

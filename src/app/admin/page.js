@@ -31,6 +31,7 @@ import {
 } from "../../lib/firebase";
 import { toast } from 'react-hot-toast';
 import AdminSiteModal from "../../components/AdminSiteModal";
+import AdminTransactions from "@/components/AdminTransactions";
 
 export default function AdminPanel() {
   const { user, loading } = useAuth();
@@ -178,6 +179,7 @@ export default function AdminPanel() {
       setLoadingUserDetails(true);
       console.log("📊 Loading enhanced user details...");
       const userDetails = await getUserDetailsWithActivity(userId);
+      console.log("🔍 User details loaded:", userDetails);
       setSelectedUser(userDetails);
       setShowUserModal(true);
     } catch (error) {
@@ -868,6 +870,7 @@ export default function AdminPanel() {
 
           {/* Database Tab */}
           {activeTab === 'database' && <AdminDatabaseEditor />}
+          {activeTab === 'transactions' && <AdminTransactions />}
         </div>
 
         {/* Professional User Details Modal */}
@@ -1382,9 +1385,7 @@ export default function AdminPanel() {
                         {(plan.overrides > 0 || plan.overrides === 'unlimited') && (
                           <div className="mb-3 px-2 py-1 bg-green-100 dark:bg-green-900/30 rounded-md">
                             <span className="text-xs font-medium text-green-700 dark:text-green-400">
-                              {plan.overrides === 'unlimited' 
-                                ? '∞ Unlimited overrides' 
-                                : `+${plan.overrides} overrides granted immediately`
+                              {`+${plan.overrides} overrides granted immediately`
                               }
                             </span>
                           </div>

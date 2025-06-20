@@ -141,6 +141,7 @@ export default function BlockedSitesModal({ isOpen, onClose, onEditSite }) {
                         <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
                           {site.url}
                         </p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">ID: {site.id}</p>
                       </div>
                       <div className={`px-2 py-1 rounded text-xs font-medium flex-shrink-0 ml-2 ${
                         site.time_remaining === 0 || site.is_blocked
