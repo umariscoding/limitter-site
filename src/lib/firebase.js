@@ -2993,6 +2993,11 @@ export const deleteAllUserSites = async (userId, reason = "Plan change") => {
     // Wait for all audit logs to be created
     await Promise.all(auditPromises);
     
+    // Update admin stats for each deleted site
+    await Promise.all(
+      Array(sitesSnapshot.size).fill().map(() => updateSiteStats(null, 'delete'))
+    );
+    
     // Then delete all sites
     sitesSnapshot.forEach((doc) => {
       batch.delete(doc.ref);

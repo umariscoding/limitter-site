@@ -9,7 +9,7 @@ import {
   formatActivityTimestamp,
   db
 } from "../lib/firebase";
-import { collection, query, where, getDocs, limit, orderBy } from "firebase/firestore";
+import { collection, query, where, getDocs, limit, orderBy, getDoc, doc } from "firebase/firestore";
 
 export default function AdminDatabaseEditor() {
   const [selectedCollection, setSelectedCollection] = useState('');
@@ -105,31 +105,39 @@ export default function AdminDatabaseEditor() {
           break;
 
         case 'transactions':
-          if (searchValue.startsWith('txn_') || searchValue.startsWith('pi_')) {
-            // Search by transaction ID (single doc)
-            const transDoc = await adminGetDocument('transactions', searchValue);
-            if (transDoc) {
+          // First try to get the exact transaction by ID
+          try {
+            const transDoc = await getDoc(doc(db, 'transactions', searchValue));
+            if (transDoc.exists()) {
+              const data = transDoc.data();
               results = [{
                 id: transDoc.id,
-                name: `${transDoc.type} - ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(transDoc.amount)}`,
-                date: formatActivityTimestamp(transDoc.created_at)
+                name: `${data.type} - ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(data.amount)}`,
+                date: formatActivityTimestamp(data.created_at),
+                description: `User: ${data.user_id}`
               }];
+              break;
             }
-          } else {
-            // Search by user ID (max 10 docs)
-            const transQuery = query(
-              collection(db, 'transactions'),
-              where('user_id', '==', searchValue),
-              orderBy('created_at', 'desc'),
-              limit(10)
-            );
-            const transSnapshot = await getDocs(transQuery);
+          } catch (error) {
+            console.log("Not a valid transaction ID, trying user ID search...");
+          }
+
+          // If not found by ID, search by user ID
+          const transQuery = query(
+            collection(db, 'transactions'),
+            where('user_id', '==', searchValue),
+            orderBy('created_at', 'desc'),
+            limit(10)
+          );
+          const transSnapshot = await getDocs(transQuery);
+          if (!transSnapshot.empty) {
             results = transSnapshot.docs.map(doc => {
               const data = doc.data();
               return {
                 id: doc.id,
                 name: `${data.type} - ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(data.amount)}`,
-                date: formatActivityTimestamp(data.created_at)
+                date: formatActivityTimestamp(data.created_at),
+                description: `User: ${data.user_id}`
               };
             });
           }
@@ -220,28 +228,6 @@ export default function AdminDatabaseEditor() {
     } catch (error) {
       console.error('Error updating document:', error);
       alert('Error updating document: ' + error.message);
-    }
-  };
-
-  const handleDeleteDocument = async (docId) => {
-    if (!confirm('Are you sure you want to delete this document? This action cannot be undone.')) {
-      return;
-    }
-    
-    try {
-      await adminDeleteDocument(selectedCollection, docId, true);
-      
-      // Clear selection and search results
-      setSelectedDoc(null);
-      setEditingDoc(null);
-      setSelectedDocId('');
-      setDocumentIds([]);
-      setSearchTerm('');
-      
-      alert('Document deleted successfully!');
-    } catch (error) {
-      console.error('Error deleting document:', error);
-      alert('Error deleting document: ' + error.message);
     }
   };
 
@@ -341,12 +327,6 @@ export default function AdminDatabaseEditor() {
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
               >
                 Save Changes
-              </button>
-              <button
-                onClick={() => handleDeleteDocument(selectedDoc.id)}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-              >
-                Delete Document
               </button>
               <button
                 onClick={() => {
