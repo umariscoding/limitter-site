@@ -198,7 +198,7 @@ export default function AdminTransactions() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-gray-500 dark:text-gray-400">Transaction ID</p>
-                  <p className="font-medium text-gray-900 dark:text-white">{selectedTransaction.transaction_id}</p>
+                  <p className="font-medium text-gray-900 dark:text-white">{selectedTransaction.id}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500 dark:text-gray-400">Amount</p>

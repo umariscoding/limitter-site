@@ -529,10 +529,12 @@ export const updateUserSubscription = async (userId, plan, paymentData) => {
     // Calculate plan price
     let planPrice = 0;
     if (plan === 'pro') {
-      planPrice = 9.99;
+      planPrice = 4.99;
     } else if (plan === 'elite') {
-      planPrice = 19.99;
+      planPrice = 11.99;
     }
+
+    
     
     // Create transaction if it's a paid plan
     let transaction = null;
@@ -560,6 +562,14 @@ export const updateUserSubscription = async (userId, plan, paymentData) => {
           updated_at: serverTimestamp()
         };
         
+      await updateUserStats(
+        { plan: previousPlan },
+        'decrement'
+      );
+      await updateUserStats(
+        { plan: plan },
+        'increment'
+      );
         console.log("📝 Creating transaction with data:", transactionData);
         if (previousPlan !== plan) {
           console.log("🔄 Plan changed, deleting all sites...");
