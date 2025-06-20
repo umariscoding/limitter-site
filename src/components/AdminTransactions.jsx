@@ -89,60 +89,60 @@ export default function AdminTransactions() {
         <input
           type="text"
           placeholder="Search transactions..."
-          className="flex-1 p-2 border rounded"
+          className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
         />
         <button
           onClick={handleSearch}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          className="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors duration-200"
         >
           Search
         </button>
       </div>
 
       {/* Transactions Table */}
-      <div className="overflow-x-auto bg-white rounded-lg shadow">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+      <div className="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow">
+        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+          <thead className="bg-gray-50 dark:bg-gray-700">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Type
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 User
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Amount
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Status
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Date
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Actions
               </th>
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
+          <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
             {transactions.map((transaction) => (
-              <tr key={transaction.id} className="hover:bg-gray-50">
+              <tr key={transaction.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center">
                     <span className="mr-2">{getTypeIcon(transaction.type)}</span>
-                    <span className="text-sm text-gray-900">
+                    <span className="text-sm text-gray-900 dark:text-gray-300">
                       {transaction.type?.replace('_', ' ').toUpperCase()}
                     </span>
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className="text-sm text-gray-900">{transaction.user_id}</span>
+                  <span className="text-sm text-gray-900 dark:text-gray-300">{transaction.user_id}</span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className="text-sm font-medium text-gray-900">
+                  <span className="text-sm font-medium text-gray-900 dark:text-gray-300">
                     {transaction.formattedAmount}
                   </span>
                 </td>
@@ -151,13 +151,13 @@ export default function AdminTransactions() {
                     {transaction.status}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                   {transaction.formattedDate}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm">
                   <button
                     onClick={() => viewTransactionDetails(transaction.id)}
-                    className="text-blue-600 hover:text-blue-900"
+                    className="text-primary hover:text-primary-dark dark:text-blue-400 dark:hover:text-blue-300"
                   >
                     View Details
                   </button>
@@ -173,7 +173,7 @@ export default function AdminTransactions() {
         <div className="mt-4 text-center">
           <button
             onClick={() => loadTransactions(true)}
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+            className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
             disabled={loading}
           >
             {loading ? 'Loading...' : 'Load More'}
@@ -183,13 +183,13 @@ export default function AdminTransactions() {
 
       {/* Transaction Details Modal */}
       {selectedTransaction && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg max-w-2xl w-full p-6">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full p-6">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold">Transaction Details</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Transaction Details</h3>
               <button
                 onClick={() => setSelectedTransaction(null)}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
               >
                 ✕
               </button>
@@ -197,53 +197,53 @@ export default function AdminTransactions() {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm text-gray-500">Transaction ID</p>
-                  <p className="font-medium">{selectedTransaction.transaction_id}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Transaction ID</p>
+                  <p className="font-medium text-gray-900 dark:text-white">{selectedTransaction.transaction_id}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Amount</p>
-                  <p className="font-medium">{selectedTransaction.formattedAmount}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Amount</p>
+                  <p className="font-medium text-gray-900 dark:text-white">{selectedTransaction.formattedAmount}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Type</p>
-                  <p className="font-medium">
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Type</p>
+                  <p className="font-medium text-gray-900 dark:text-white">
                     {getTypeIcon(selectedTransaction.type)} {selectedTransaction.type?.replace('_', ' ').toUpperCase()}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Status</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Status</p>
                   <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(selectedTransaction.status)}`}>
                     {selectedTransaction.status}
                   </span>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Date</p>
-                  <p className="font-medium">{selectedTransaction.formattedDate}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Date</p>
+                  <p className="font-medium text-gray-900 dark:text-white">{selectedTransaction.formattedDate}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Payment Method</p>
-                  <p className="font-medium">{selectedTransaction.payment_method}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Payment Method</p>
+                  <p className="font-medium text-gray-900 dark:text-white">{selectedTransaction.payment_method}</p>
                 </div>
               </div>
               
               {selectedTransaction.user && (
                 <div className="mt-4">
-                  <h4 className="font-medium mb-2">User Information</h4>
-                  <div className="bg-gray-50 p-3 rounded">
-                    <p><span className="text-gray-500">Name:</span> {selectedTransaction.user.name}</p>
-                    <p><span className="text-gray-500">Email:</span> {selectedTransaction.user.email}</p>
-                    <p><span className="text-gray-500">Plan:</span> {selectedTransaction.user.plan}</p>
+                  <h4 className="font-medium text-gray-900 dark:text-white mb-2">User Information</h4>
+                  <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded">
+                    <p className="text-gray-900 dark:text-gray-300"><span className="text-gray-500 dark:text-gray-400">Name:</span> {selectedTransaction.user.name}</p>
+                    <p className="text-gray-900 dark:text-gray-300"><span className="text-gray-500 dark:text-gray-400">Email:</span> {selectedTransaction.user.email}</p>
+                    <p className="text-gray-900 dark:text-gray-300"><span className="text-gray-500 dark:text-gray-400">Plan:</span> {selectedTransaction.user.plan}</p>
                   </div>
                 </div>
               )}
 
               {selectedTransaction.metadata && (
                 <div className="mt-4">
-                  <h4 className="font-medium mb-2">Additional Details</h4>
-                  <div className="bg-gray-50 p-3 rounded">
+                  <h4 className="font-medium text-gray-900 dark:text-white mb-2">Additional Details</h4>
+                  <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded">
                     {Object.entries(selectedTransaction.metadata).map(([key, value]) => (
-                      <p key={key}>
-                        <span className="text-gray-500">{key.replace('_', ' ')}:</span> {value}
+                      <p key={key} className="text-gray-900 dark:text-gray-300">
+                        <span className="text-gray-500 dark:text-gray-400">{key.replace('_', ' ')}:</span> {value}
                       </p>
                     ))}
                   </div>
@@ -257,15 +257,15 @@ export default function AdminTransactions() {
       {/* Loading State */}
       {loading && transactions.length === 0 && (
         <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
-          <p className="mt-4 text-gray-500">Loading transactions...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+          <p className="mt-4 text-gray-500 dark:text-gray-400">Loading transactions...</p>
         </div>
       )}
 
       {/* Empty State */}
       {!loading && transactions.length === 0 && (
         <div className="text-center py-12">
-          <p className="text-gray-500">No transactions found</p>
+          <p className="text-gray-500 dark:text-gray-400">No transactions found</p>
         </div>
       )}
     </div>

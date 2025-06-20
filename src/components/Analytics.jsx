@@ -316,7 +316,7 @@ export default function Analytics({ onBack, user, subscription, blockedSites, ov
               </div>
             </div>
             <div className="text-2xl font-bold text-orange-900 dark:text-orange-100">
-              {formatCurrency(user?.money_spent)}
+              {formatCurrency(user?.total_spent)}
             </div>
             <div className="text-sm text-orange-700 dark:text-orange-300">Total Spent</div>
           </div>
@@ -427,7 +427,7 @@ export default function Analytics({ onBack, user, subscription, blockedSites, ov
               <div className="p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600">
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Total Spent</p>
                 <p className="text-lg font-bold text-gray-900 dark:text-white">
-                  {formatCurrency(user?.money_spent)}
+                  {formatCurrency(user?.total_spent)}
                 </p>
               </div>
             </div>

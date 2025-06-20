@@ -49,6 +49,7 @@ export default function AdminPanel() {
   const [systemStats, setSystemStats] = useState(null);
   const [users, setUsers] = useState([]);
   const [sites, setSites] = useState([]);
+  const [transactions, setTransactions] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [selectedSite, setSelectedSite] = useState(null);
   const [collections, setCollections] = useState({});
@@ -56,8 +57,10 @@ export default function AdminPanel() {
   // Pagination states
   const [lastUserDoc, setLastUserDoc] = useState(null);
   const [lastSiteDoc, setLastSiteDoc] = useState(null);
+  const [lastTransactionDoc, setLastTransactionDoc] = useState(null);
   const [hasMoreUsers, setHasMoreUsers] = useState(true);
   const [hasMoreSites, setHasMoreSites] = useState(true);
+  const [hasMoreTransactions, setHasMoreTransactions] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const ITEMS_PER_PAGE = 10;
   
@@ -120,6 +123,7 @@ export default function AdminPanel() {
   const loadSystemStats = async () => {
     try {
       const stats = await adminGetSystemStats();
+      console.log("🔍 System stats loaded:", stats);
       setSystemStats(stats);
     } catch (error) {
       console.error("Error loading system stats:", error);
@@ -384,10 +388,21 @@ export default function AdminPanel() {
   const handleSearch = async () => {
     if (searchTerm) {
       if (activeTab === 'users') {
-        const results = await adminSearchUsers(searchTerm);
-        setUsers(results);
-        setHasMoreUsers(false);
-        setLastUserDoc(null);
+        try {
+          const results = await adminSearchUsers(searchTerm, users);
+          // If we got back more users than we had (meaning we found a new user), update the full list
+          if (results.length > users.length) {
+            setUsers(results);
+            toast.success("Found and added a new user to the list");
+          } else {
+            setUsers(results);
+          }
+          setHasMoreUsers(false);
+          setLastUserDoc(null);
+        } catch (error) {
+          console.error("Error searching users:", error);
+          toast.error("Failed to search users");
+        }
       } else if (activeTab === 'sites') {
         const results = await adminSearchSites(searchTerm);
         setSites(results);
@@ -488,11 +503,17 @@ export default function AdminPanel() {
                   { id: 'dashboard', name: 'Dashboard', icon: 'M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z' },
                   { id: 'users', name: 'Users', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z' },
                   { id: 'sites', name: 'Sites', icon: 'M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9' },
+                  { id: 'transactions', name: 'Transactions', icon: 'M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z' },
                   { id: 'database', name: 'Database', icon: 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4' }
                 ].map((tab) => (
                   <button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
+                    onClick={() => {
+                      setActiveTab(tab.id);
+                      setSearchTerm('');
+                      if (tab.id === 'users' && users.length === 0) loadUsers();
+                      if (tab.id === 'sites' && sites.length === 0) loadSites();
+                    }}
                     className={`flex items-center gap-3 py-4 px-6 font-medium text-sm border-b-2 transition-colors duration-200 ${
                       activeTab === tab.id
                         ? 'border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20'
@@ -509,7 +530,7 @@ export default function AdminPanel() {
             </div>
           </div>
 
-          {/* Enhanced Dashboard Tab */}
+          {/* Tab Content */}
           {activeTab === 'dashboard' && (
             <div className="space-y-8">
               {/* System Statistics */}
@@ -524,7 +545,7 @@ export default function AdminPanel() {
                     <h2 className="text-2xl font-bold text-gray-900 dark:text-white">System Analytics</h2>
                   </div>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
                     <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-2xl text-white shadow-lg hover:shadow-xl transition-shadow duration-300">
                       <div className="flex items-center justify-between mb-4">
                         <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
@@ -567,12 +588,29 @@ export default function AdminPanel() {
                           </svg>
                         </div>
                         <div className="text-right">
-                          <div className="text-3xl font-bold">${(systemStats?.overrides?.totalMoneySpent || 0).toFixed(0)}</div>
+                          <div className="text-3xl font-bold">${(systemStats?.revenue?.total || 0).toFixed(2)}</div>
                           <div className="text-orange-100 text-sm">Total Revenue</div>
                         </div>
                       </div>
                       <div className="w-full bg-white/20 rounded-full h-2">
                         <div className="bg-white h-2 rounded-full" style={{width: '90%'}}></div>
+                      </div>
+                    </div>
+
+                    <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-6 rounded-2xl text-white shadow-lg hover:shadow-xl transition-shadow duration-300">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                          </svg>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-3xl font-bold">{systemStats?.transactions?.total || 0}</div>
+                          <div className="text-purple-100 text-sm">Total Transactions</div>
+                        </div>
+                      </div>
+                      <div className="w-full bg-white/20 rounded-full h-2">
+                        <div className="bg-white h-2 rounded-full" style={{width: '95%'}}></div>
                       </div>
                     </div>
                   </div>
@@ -638,7 +676,6 @@ export default function AdminPanel() {
             </div>
           )}
 
-          {/* Users Tab */}
           {activeTab === 'users' && (
             <div className="space-y-6">
               {/* Search */}
@@ -731,7 +768,6 @@ export default function AdminPanel() {
             </div>
           )}
 
-          {/* Sites Tab */}
           {activeTab === 'sites' && (
             <div className="space-y-6">
               {/* Search */}
@@ -868,12 +904,12 @@ export default function AdminPanel() {
             </div>
           )}
 
-          {/* Database Tab */}
-          {activeTab === 'database' && <AdminDatabaseEditor />}
           {activeTab === 'transactions' && <AdminTransactions />}
+          {activeTab === 'database' && <AdminDatabaseEditor />}
+        </div>
         </div>
 
-        {/* Professional User Details Modal */}
+      {/* Modals */}
         {showUserModal && selectedUser && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white dark:bg-gray-800 rounded-lg max-w-4xl w-full max-h-[95vh] overflow-hidden shadow-xl">
@@ -1108,7 +1144,6 @@ export default function AdminPanel() {
           </div>
         )}
 
-        {/* Enhanced Grant Overrides Modal */}
         {showGrantModal && selectedUser && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-300">
             <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-lg w-full shadow-2xl animate-in slide-in-from-bottom-8 duration-300">
@@ -1282,7 +1317,6 @@ export default function AdminPanel() {
           </div>
         )}
 
-        {/* Enhanced Change Plan Modal */}
         {showPlanModal && selectedUser && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-300">
             <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-2xl w-full shadow-2xl animate-in slide-in-from-bottom-8 duration-300 flex flex-col max-h-[90vh]">
@@ -1734,7 +1768,6 @@ export default function AdminPanel() {
           site={selectedSiteForEdit}
           onUpdate={handleUpdateSite}
         />
-      </div>
       <Footer />
     </>
   );

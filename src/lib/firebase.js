@@ -23,7 +23,8 @@ import {
   serverTimestamp, 
   limit as firestoreLimit,
   startAfter,
-  runTransaction
+  runTransaction,
+  writeBatch
 } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -170,7 +171,7 @@ export const getUserProfile = async (userId) => {
     const userData = userDoc.data();
     
     // Initialize money_spent if it doesn't exist
-    if (userData.money_spent === undefined) {
+    if (userData.total_spent === undefined) {
       await initializeUserProfile(userId, userData);
       return await getUserProfile(userId);
     }
@@ -186,7 +187,7 @@ export const getUserProfile = async (userId) => {
       daily_stats: userData.daily_stats || {},
       weekly_stats: userData.weekly_stats || {},
       monthly_stats: userData.monthly_stats || {},
-      money_spent: userData.money_spent || 0
+      total_spent: userData.total_spent || 0
     };
   } catch (error) {
     console.error("Error getting user profile:", error);
@@ -560,6 +561,11 @@ export const updateUserSubscription = async (userId, plan, paymentData) => {
         };
         
         console.log("📝 Creating transaction with data:", transactionData);
+        if (previousPlan !== plan) {
+          console.log("🔄 Plan changed, deleting all sites...");
+          await deleteAllUserSites(userId, `Plan changed from ${previousPlan} to ${plan}`);
+        }
+        
         transaction = await createTransaction(userId, transactionData);
         console.log("✅ Transaction created:", transaction.id);
       } catch (transactionError) {
@@ -1306,16 +1312,18 @@ export const getOverrideAnalytics = async (userId, plan) => {
     if (plan !== 'free') {
       try {
         const historyQuery = query(
-          collection(db, 'override_history'),
+          collection(db, 'transactions'),
           where('user_id', '==', userId),
-          orderBy('timestamp', 'desc'),
-          firestoreLimit(50)
+          where('type', '==', 'override_purchase'),
+          firestoreOrderBy('created_at', 'desc'),
+          firestoreLimit(5)
         );
         
         const historySnapshot = await getDocs(historyQuery);
         stats.recentHistory = historySnapshot.docs.map(doc => ({
           id: doc.id,
-          ...doc.data()
+          ...doc.data(),
+          timestamp: doc.data().created_at // Map created_at to timestamp for backward compatibility
         }));
       } catch (error) {
         console.warn("Override history not available:", error);
@@ -1546,6 +1554,7 @@ export const getUserDetails = async (userId) => {
 
 export const adminUpdateUserProfile = async (userId, updateData) => {
   try {
+    const userRef = doc(db, 'users', userId);
     
     await updateDoc(userRef, {
       ...updateData,
@@ -1553,7 +1562,6 @@ export const adminUpdateUserProfile = async (userId, updateData) => {
     });
     
     await getDoc(userRef);
-    
     return await getUserProfile(userId);
   } catch (error) {
     console.error("❌ Admin error updating user profile:", error);
@@ -1623,6 +1631,12 @@ export const adminChangeUserPlan = async (userId, newPlan, reason = "Admin chang
     const currentUser = await getUserProfile(userId);
     const previousPlan = currentUser?.plan || 'free';
     
+    // Delete all sites when plan changes
+    if (previousPlan !== newPlan) {
+      console.log("🔄 Plan changed by admin, deleting all sites...");
+      await deleteAllUserSites(userId, `Admin changed plan from ${previousPlan} to ${newPlan}`);
+    }
+    
     await adminUpdateUserProfile(userId, { plan: newPlan });
     
     const subscriptionRef = doc(db, 'subscriptions', userId);
@@ -1643,6 +1657,16 @@ export const adminChangeUserPlan = async (userId, newPlan, reason = "Admin chang
     } else {
       await createSubscription(userId, newPlan);
     }
+    
+    // Update admin stats for plan change
+    await updateUserStats(
+      { plan: previousPlan },
+      'decrement'
+    );
+    await updateUserStats(
+      { plan: newPlan },
+      'increment'
+    );
     
     await grantPlanBenefits(userId, newPlan, previousPlan, reason);
     
@@ -1675,7 +1699,7 @@ export const adminChangeUserPlan = async (userId, newPlan, reason = "Admin chang
     console.log("✅ Admin: User plan changed successfully with benefits granted and activity logged");
     return await getUserSubscription(userId);
   } catch (error) {
-    console.error("❌ Admin error changing user plan:", error);
+    console.error("❌ Error in adminChangeUserPlan:", error);
     throw error;
   }
 };
@@ -1954,70 +1978,70 @@ export const adminDeleteDocument = async (collectionName, documentId, createAudi
 
 export const adminGetSystemStats = async () => {
   try {
-    const [stats, recentTransactions] = await Promise.all([
+    const [stats] = await Promise.all([
       getAdminStats(),
-      getTransactions(null, 10)
+      // getTransactions(null, 10)
     ]);
 
-    // Calculate transaction trends
-    const transactionTrends = {
-      recent_transactions: recentTransactions.map(t => ({
-        id: t.id,
-        user_id: t.user_id,
-        type: t.type,
-        amount: t.amount,
-        status: t.status,
-        date: t.created_at,
-        description: t.description,
-        formattedAmount: new Intl.NumberFormat('en-US', {
-          style: 'currency',
-          currency: 'USD'
-        }).format(t.amount || 0),
-        formattedDate: formatActivityTimestamp(t.created_at)
-      })),
-      daily_volume: {},
-      payment_methods: {},
-      success_rate: 0,
-      transaction_types: {}
-    };
+    // // Calculate transaction trends
+    // const transactionTrends = {
+    //   recent_transactions: recentTransactions.map(t => ({
+    //     id: t.id,
+    //     user_id: t.user_id,
+    //     type: t.type,
+    //     amount: t.amount,
+    //     status: t.status,
+    //     date: t.created_at,
+    //     description: t.description,
+    //     formattedAmount: new Intl.NumberFormat('en-US', {
+    //       style: 'currency',
+    //       currency: 'USD'
+    //     }).format(t.amount || 0),
+    //     formattedDate: formatActivityTimestamp(t.created_at)
+    //   })),
+    //   daily_volume: {},
+    //   payment_methods: {},
+    //   success_rate: 0,
+    //   transaction_types: {}
+    // };
 
-    // Calculate success rate and transaction types
-    const completedTransactions = recentTransactions.filter(t => t.status === 'completed').length;
-    transactionTrends.success_rate = (completedTransactions / recentTransactions.length) * 100;
+    // // Calculate success rate and transaction types
+    // const completedTransactions = recentTransactions.filter(t => t.status === 'completed').length;
+    // transactionTrends.success_rate = (completedTransactions / recentTransactions.length) * 100;
 
-    recentTransactions.forEach(t => {
-      // Count by payment method
-      transactionTrends.payment_methods[t.payment_method] = 
-        (transactionTrends.payment_methods[t.payment_method] || 0) + 1;
+    // recentTransactions.forEach(t => {
+    //   // Count by payment method
+    //   transactionTrends.payment_methods[t.payment_method] = 
+    //     (transactionTrends.payment_methods[t.payment_method] || 0) + 1;
       
-      // Count by transaction type
-      transactionTrends.transaction_types[t.type] = 
-        (transactionTrends.transaction_types[t.type] || 0) + 1;
+    //   // Count by transaction type
+    //   transactionTrends.transaction_types[t.type] = 
+    //     (transactionTrends.transaction_types[t.type] || 0) + 1;
 
-      // Group by day for volume trend
-      const day = new Date(t.created_at.seconds * 1000).toISOString().split('T')[0];
-      transactionTrends.daily_volume[day] = (transactionTrends.daily_volume[day] || 0) + t.amount;
-    });
+    //   // Group by day for volume trend
+    //   const day = new Date(t.created_at.seconds * 1000).toISOString().split('T')[0];
+    //   transactionTrends.daily_volume[day] = (transactionTrends.daily_volume[day] || 0) + t.amount;
+    // });
 
     const enhancedStats = {
       ...stats,
-      transactions: {
-        ...stats.transactions,
-        trends: transactionTrends,
-        summary: {
-          total_volume: recentTransactions.reduce((sum, t) => sum + (t.amount || 0), 0),
-          average_transaction: recentTransactions.length > 0 ? 
-            recentTransactions.reduce((sum, t) => sum + (t.amount || 0), 0) / recentTransactions.length : 0,
-          success_rate: transactionTrends.success_rate,
-          most_common_type: Object.entries(transactionTrends.transaction_types)
-            .sort((a, b) => b[1] - a[1])[0]?.[0] || 'none'
-        }
-      },
+      // transactions: {
+      //   ...stats.transactions,
+      //   trends: transactionTrends,
+      //   summary: {
+      //     total_volume: recentTransactions.reduce((sum, t) => sum + (t.amount || 0), 0),
+      //     average_transaction: recentTransactions.length > 0 ? 
+      //       recentTransactions.reduce((sum, t) => sum + (t.amount || 0), 0) / recentTransactions.length : 0,
+      //     success_rate: transactionTrends.success_rate,
+      //     most_common_type: Object.entries(transactionTrends.transaction_types)
+      //       .sort((a, b) => b[1] - a[1])[0]?.[0] || 'none'
+      //   }
+      // },
       revenue: {
         ...stats.revenue,
-        daily_trend: transactionTrends.daily_volume,
-        by_payment_method: transactionTrends.payment_methods,
-        by_type: transactionTrends.transaction_types
+        // daily_trend: transactionTrends.daily_volume,
+        // by_payment_method: transactionTrends.payment_methods,
+        // by_type: transactionTrends.transaction_types
       },
       generatedAt: new Date().toISOString()
     };
@@ -2029,15 +2053,53 @@ export const adminGetSystemStats = async () => {
   }
 };
 
-export const adminSearchUsers = async (searchTerm) => {
-  try {    
-    const users = await getAllUsers();
+export const getUserByEmailOrId = async (searchTerm) => {
+  try {
+    // Try to find by email
+    const usersRef = collection(db, 'users');
+    let userQuery = query(
+      usersRef,
+      where('profile_email', '==', searchTerm.toLowerCase())
+    );
     
-    const filteredUsers = users.filter(user => 
+    let userSnapshot = await getDocs(userQuery);
+    
+    if (userSnapshot.empty) {
+      // If not found by email, try by ID
+      const userDocRef = doc(db, 'users', searchTerm);
+      const userDoc = await getDoc(userDocRef);
+      if (userDoc.exists()) {
+        return { id: userDoc.id, ...userDoc.data() };
+      }
+      return null;
+    }
+    
+    // Return the first matching user
+    const document = userSnapshot.docs[0];
+    return { id: document.id, ...document.data() };
+  } catch (error) {
+    console.error("Error fetching user by email or ID:", error);
+    return null;
+  }
+};
+
+export const adminSearchUsers = async (searchTerm, existingUsers) => {
+  try {    
+    // Search in the provided existing users list
+    const filteredUsers = existingUsers.filter(user => 
       user.profile_email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.profile_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.id?.toLowerCase().includes(searchTerm.toLowerCase())
     );
+
+    // If no results found in existing list and the search term looks like an email or ID
+    if (filteredUsers.length === 0 && 
+        (searchTerm.includes('@') || searchTerm.length > 20)) { // Basic check for email or ID
+      const exactUser = await getUserByEmailOrId(searchTerm);
+      if (exactUser && !existingUsers.some(u => u.id === exactUser.id)) {
+        return [...existingUsers, exactUser];
+      }
+    }
     
     return filteredUsers;
   } catch (error) {
@@ -2190,7 +2252,7 @@ export const getUserDetailsWithActivity = async (userId) => {
     const [userDetails, recentActivity, transactions] = await Promise.all([
       getUserDetails(userId),
       getUserRecentActivity(userId),
-      getTransactions(userId, 10)
+      // getTransactions(userId, 10)
     ]);
     
     const subscriptionRef = doc(db, 'subscriptions', userId);
@@ -2212,32 +2274,32 @@ export const getUserDetailsWithActivity = async (userId) => {
     }
 
     // Add transaction history
-    const transactionHistory = transactions.map(t => ({
-      type: 'transaction',
-      description: t.description,
-      timestamp: t.created_at,
-      amount: t.amount,
-      status: t.status,
-      icon: t.type === 'plan_purchase' ? '💳' : '⚡',
-      color: t.status === 'completed' ? 'green' : 'yellow',
-      metadata: t.metadata
-    }));
+    // const transactionHistory = transactions.map(t => ({
+    //   type: 'transaction',
+    //   description: t.description,
+    //   timestamp: t.created_at,
+    //   amount: t.amount,
+    //   status: t.status,
+    //   icon: t.type === 'plan_purchase' ? '💳' : '⚡',
+    //   color: t.status === 'completed' ? 'green' : 'yellow',
+    //   metadata: t.metadata
+    // }));
     
     const enhancedDetails = {
       ...userDetails,
       recentActivity: recentActivity,
       subscriptionHistory: subscriptionHistory,
-      transactionHistory: transactionHistory,
-      spending: {
-        total: transactions.reduce((sum, t) => t.status === 'completed' ? sum + t.amount : sum, 0),
-        by_type: transactions.reduce((acc, t) => {
-          if (t.status === 'completed') {
-            acc[t.type] = (acc[t.type] || 0) + t.amount;
-          }
-          return acc;
-        }, {}),
-        recent_transactions: transactions.slice(0, 5)
-      },
+      // transactionHistory: transactionHistory,
+      // spending: {
+      //   total: transactions.reduce((sum, t) => t.status === 'completed' ? sum + t.amount : sum, 0),
+      //   by_type: transactions.reduce((acc, t) => {
+      //     if (t.status === 'completed') {
+      //       acc[t.type] = (acc[t.type] || 0) + t.amount;
+      //     }
+      //     return acc;
+      //   }, {}),
+      //   recent_transactions: transactions.slice(0, 5)
+      // },
       lastActivity: recentActivity.length > 0 ? recentActivity[0] : null
     };
     
@@ -2369,26 +2431,38 @@ export const updateUserStats = async (change, type) => {
   try {
     await runTransaction(db, async (transaction) => {
       const statsDoc = await transaction.get(statsRef);
+      if (!statsDoc.exists()) {
+        throw new Error('Admin stats document does not exist');
+      }
       const stats = statsDoc.data();
+
+      // Initialize stats if they don't exist
+      if (!stats.users) {
+        stats.users = {
+          total: 0,
+          byPlan: { free: 0, pro: 0, elite: 0 }
+        };
+      }
+      if (!stats.users.byPlan) {
+        stats.users.byPlan = { free: 0, pro: 0, elite: 0 };
+      }
 
       if (type === 'create') {
         stats.users.total += 1;
         stats.users.byPlan.free += 1;
       } else if (type === 'delete') {
-        stats.users.total -= 1;
-        const oldPlan = change.before.data().plan || 'free';
-        stats.users.byPlan[oldPlan] -= 1;
-      } else if (type === 'update') {
-        const oldPlan = change.before.data().plan || 'free';
-        const newPlan = change.after.data().plan || 'free';
-        if (oldPlan !== newPlan) {
-          stats.users.byPlan[oldPlan] -= 1;
-          stats.users.byPlan[newPlan] += 1;
+        stats.users.total = Math.max(0, stats.users.total - 1);
+        if (change.plan) {
+          stats.users.byPlan[change.plan] = Math.max(0, (stats.users.byPlan[change.plan] || 0) - 1);
         }
+      } else if (type === 'increment' && change.plan) {
+        stats.users.byPlan[change.plan] = (stats.users.byPlan[change.plan] || 0) + 1;
+      } else if (type === 'decrement' && change.plan) {
+        stats.users.byPlan[change.plan] = Math.max(0, (stats.users.byPlan[change.plan] || 0) - 1);
       }
 
       stats.lastUpdated = serverTimestamp();
-      transaction.set(statsRef, stats);
+      transaction.update(statsRef, stats);
     });
   } catch (error) {
     console.error("Error updating user stats:", error);
@@ -2402,6 +2476,9 @@ export const updateSiteStats = async (change, type) => {
   try {
     await runTransaction(db, async (transaction) => {
       const statsDoc = await transaction.get(statsRef);
+      if (!statsDoc.exists()) {
+        throw new Error('Admin stats document does not exist');
+      }
       const stats = statsDoc.data();
 
       if (type === 'create') {
@@ -2411,7 +2488,7 @@ export const updateSiteStats = async (change, type) => {
       }
 
       stats.lastUpdated = serverTimestamp();
-      transaction.set(statsRef, stats);
+      transaction.update(statsRef, stats);
     });
   } catch (error) {
     console.error("Error updating site stats:", error);
@@ -2517,12 +2594,16 @@ const updateRevenueStats = async (amount, type, transactionDetails) => {
   try {
     await runTransaction(db, async (transaction) => {
       const statsDoc = await transaction.get(statsRef);
-      let stats = statsDoc.exists() ? statsDoc.data() : {};
+      if (!statsDoc.exists()) {
+        throw new Error('Admin stats document does not exist');
+      }
+      let stats = statsDoc.data();
 
       // Initialize stats if they don't exist
       if (!stats.revenue) {
         stats.revenue = {
           total: 0,
+          byOverrides: 0,
           byPlan: { pro: 0, elite: 0 },
           lastPurchase: null
         };
@@ -2548,13 +2629,26 @@ const updateRevenueStats = async (amount, type, transactionDetails) => {
       // Update transaction stats
       stats.transactions.total++;
       
-      // Initialize counters if they don't exist
-      stats.transactions.byType[transactionDetails.type] = (stats.transactions.byType[transactionDetails.type] || 0) + 1;
-      stats.transactions.byStatus[transactionDetails.status] = (stats.transactions.byStatus[transactionDetails.status] || 0) + 1;
-      stats.transactions.byPaymentMethod[transactionDetails.payment_method] = (stats.transactions.byPaymentMethod[transactionDetails.payment_method] || 0) + 1;
+      // Update byType stats
+      if (transactionDetails.type) {
+        stats.transactions.byType[transactionDetails.type] = 
+          (stats.transactions.byType[transactionDetails.type] || 0) + 1;
+      }
+      
+      // Update byStatus stats
+      if (transactionDetails.status) {
+        stats.transactions.byStatus[transactionDetails.status] = 
+          (stats.transactions.byStatus[transactionDetails.status] || 0) + 1;
+      }
+      
+      // Update byPaymentMethod stats
+      if (transactionDetails.payment_method) {
+        stats.transactions.byPaymentMethod[transactionDetails.payment_method] = 
+          (stats.transactions.byPaymentMethod[transactionDetails.payment_method] || 0) + 1;
+      }
 
       stats.lastUpdated = serverTimestamp();
-      transaction.set(statsRef, stats);
+      transaction.update(statsRef, stats);
     });
   } catch (error) {
     console.error("Error updating revenue stats:", error);
@@ -2591,8 +2685,26 @@ export const createTransaction = async (userId, transactionData) => {
     const transactionRef = doc(collection(db, 'transactions'));
     await setDoc(transactionRef, transaction);
 
-    // Update user's money_spent field
+    // Update admin stats and user data for completed transactions
     if (transaction.status === 'completed') {
+      // Determine the type for revenue stats
+      let revenueType = 'override';
+      if (transaction.type === 'plan_purchase' && metadata.new_plan) {
+        revenueType = metadata.new_plan;
+      }
+      
+      // Update revenue and transaction stats
+      await updateRevenueStats(
+        transaction.amount,
+        revenueType,
+        {
+          type: transaction.type,
+          status: transaction.status,
+          payment_method: transaction.payment_method
+        }
+      );
+
+      // Update user's total_spent field
       const userRef = doc(db, 'users', userId);
       await runTransaction(db, async (transaction) => {
         const userDoc = await transaction.get(userRef);
@@ -2600,9 +2712,10 @@ export const createTransaction = async (userId, transactionData) => {
           throw new Error('User document does not exist!');
         }
         
-        const currentSpent = userDoc.data().money_spent || 0;
+        const userData = userDoc.data();
         transaction.update(userRef, {
-          money_spent: currentSpent + transactionData.amount,
+          total_spent: (userData.total_spent || 0) + transactionData.amount,
+          last_purchase: serverTimestamp(),
           updated_at: serverTimestamp()
         });
       });
@@ -2816,11 +2929,11 @@ export const initializeUserProfile = async (userId, userData) => {
       // New user - initialize with default values
       await setDoc(userRef, {
         ...userData,
-        money_spent: 0,
+        total_spent: 0,
         created_at: serverTimestamp(),
         updated_at: serverTimestamp()
       });
-    } else if (userDoc.data().money_spent === undefined) {
+    } else if (userDoc.data().total_spent === undefined) {
       // Existing user but no money_spent field - calculate from transactions
       const transactionsQuery = query(
         collection(db, 'transactions'),
@@ -2832,12 +2945,121 @@ export const initializeUserProfile = async (userId, userData) => {
       const totalSpent = transactionsSnapshot.docs.reduce((sum, doc) => sum + (doc.data().amount || 0), 0);
       
       await updateDoc(userRef, {
-        money_spent: totalSpent,
+        total_spent: totalSpent,
         updated_at: serverTimestamp()
       });
     }
   } catch (error) {
     console.error("Error initializing user profile:", error);
+    throw error;
+  }
+};
+
+export const deleteAllUserSites = async (userId, reason = "Plan change") => {
+  try {
+    console.log(`🗑️ Deleting all sites for user ${userId}`);
+    
+    // Get all sites for the user
+    const sitesRef = collection(db, 'blocked_sites');
+    const sitesQuery = query(
+      sitesRef, 
+      where('user_id', '==', userId)
+    );
+    const sitesSnapshot = await getDocs(sitesQuery);
+    
+    // Create audit log entries and delete sites
+    const batch = writeBatch(db);
+    
+    // Create audit log entries first
+    const auditPromises = sitesSnapshot.docs.map(doc => {
+      const siteData = doc.data();
+      return addDoc(collection(db, 'admin_audit_log'), {
+        action: 'hard_delete_site',
+        site_id: doc.id,
+        site_data: siteData,
+        reason: reason,
+        deleted_at: serverTimestamp()
+      });
+    });
+    
+    // Wait for all audit logs to be created
+    await Promise.all(auditPromises);
+    
+    // Then delete all sites
+    sitesSnapshot.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    
+    await batch.commit();
+    
+    // Update user's total sites count to 0
+    await updateDoc(doc(db, 'users', userId), {
+      total_sites_blocked: 0,
+      updated_at: serverTimestamp()
+    });
+    
+    console.log(`✅ Successfully deleted ${sitesSnapshot.size} sites for user ${userId}`);
+    return { success: true, deletedCount: sitesSnapshot.size };
+  } catch (error) {
+    console.error("❌ Error deleting all user sites:", error);
+    throw error;
+  }
+};
+
+export const adminGetDocumentIds = async (collectionName, searchTerm) => {
+  try {
+    const collectionRef = collection(db, collectionName);
+    let snapshot;
+    
+    // Get all documents in the collection
+    snapshot = await getDocs(collectionRef);
+    
+    // Filter and map the results
+    const results = [];
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+      
+      // Check if any of the searchable fields match the search term
+      const matchesSearch = 
+        doc.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        data.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        data.profile_email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        data.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        data.profile_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        data.url?.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      if (matchesSearch) {
+        results.push({
+          id: doc.id,
+          name: data.name || data.profile_name,
+          email: data.email || data.profile_email,
+          url: data.url
+        });
+      }
+    });
+    
+    return results;
+  } catch (error) {
+    console.error(`❌ Admin error searching documents in ${collectionName}:`, error);
+    throw error;
+  }
+};
+
+export const adminGetDocument = async (collectionName, documentId) => {
+  try {
+    const docRef = doc(db, collectionName, documentId);
+    const docSnap = await getDoc(docRef);
+    
+    if (!docSnap.exists()) {
+      throw new Error('Document not found');
+    }
+    
+    return {
+      id: docSnap.id,
+      ...docSnap.data()
+    };
+  } catch (error) {
+    console.error(`❌ Admin error getting document from ${collectionName}:`, error);
     throw error;
   }
 };

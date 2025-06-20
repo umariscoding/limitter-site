@@ -5,8 +5,11 @@ import {
   adminGetDocumentIds,
   adminGetDocument,
   adminUpdateDocument,
-  adminDeleteDocument
+  adminDeleteDocument,
+  formatActivityTimestamp,
+  db
 } from "../lib/firebase";
+import { collection, query, where, getDocs, limit, orderBy } from "firebase/firestore";
 
 export default function AdminDatabaseEditor() {
   const [selectedCollection, setSelectedCollection] = useState('');
@@ -18,22 +21,135 @@ export default function AdminDatabaseEditor() {
   const [searchTerm, setSearchTerm] = useState('');
   
   const collections = [
-    'users',
-    'subscriptions', 
-    'blocked_sites',
-    'user_overrides',
-    'override_history',
-    'override_purchases',
-    'credit_purchases',
-    'admin_audit_log'
+    'admin_audit',
+    'admin_audit_log',
+    'subscriptions',
+    'transactions',
+    'user_overrides'
   ];
+
+  const getSearchPlaceholder = (collection) => {
+    switch (collection) {
+      case 'admin_audit':
+        return 'Search by target user ID...';
+      case 'admin_audit_log':
+        return 'Search by user ID...';
+      case 'subscriptions':
+        return 'Search by user ID...';
+      case 'transactions':
+        return 'Search by transaction ID or user ID...';
+      case 'user_overrides':
+        return 'Search by user ID...';
+      default:
+        return 'Search...';
+    }
+  };
 
   const handleSearch = async () => {
     if (!selectedCollection || !searchTerm.trim()) return;
     
     setLoading(true);
     try {
-      const results = await adminGetDocumentIds(selectedCollection, searchTerm.trim());
+      let results = [];
+      const searchValue = searchTerm.trim();
+
+      switch (selectedCollection) {
+        case 'admin_audit':
+          // Get all audit entries for target user
+          const auditQuery = query(
+            collection(db, 'admin_audit'),
+            where('target_user_id', '==', searchValue)
+          );
+          const auditSnapshot = await getDocs(auditQuery);
+          results = auditSnapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              name: `${data.action} at ${formatActivityTimestamp(data.timestamp)}`,
+              description: data.description || ''
+            };
+          });
+          break;
+
+        case 'admin_audit_log':
+          // Get all audit logs where site_data.user_id matches
+          const auditLogQuery = query(
+            collection(db, 'admin_audit_log'),
+            where('site_data.user_id', '==', searchValue)
+          );
+          const auditLogSnapshot = await getDocs(auditLogQuery);
+          results = auditLogSnapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              name: `${data.action} - Site: ${data.site_id || 'N/A'}`,
+              date: formatActivityTimestamp(data.timestamp || data.deleted_at),
+              description: `User: ${data.site_data?.user_id || 'N/A'}`
+            };
+          });
+          break;
+
+        case 'subscriptions':
+          // Get single subscription by user ID
+          const subsQuery = query(
+            collection(db, 'subscriptions'),
+            where('user_id', '==', searchValue),
+            limit(1)
+          );
+          const subsSnapshot = await getDocs(subsQuery);
+          results = subsSnapshot.docs.map(doc => ({
+            id: doc.id,
+            name: `Subscription for ${doc.data().user_id}`,
+            plan: doc.data().plan
+          }));
+          break;
+
+        case 'transactions':
+          if (searchValue.startsWith('txn_') || searchValue.startsWith('pi_')) {
+            // Search by transaction ID (single doc)
+            const transDoc = await adminGetDocument('transactions', searchValue);
+            if (transDoc) {
+              results = [{
+                id: transDoc.id,
+                name: `${transDoc.type} - ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(transDoc.amount)}`,
+                date: formatActivityTimestamp(transDoc.created_at)
+              }];
+            }
+          } else {
+            // Search by user ID (max 10 docs)
+            const transQuery = query(
+              collection(db, 'transactions'),
+              where('user_id', '==', searchValue),
+              orderBy('created_at', 'desc'),
+              limit(10)
+            );
+            const transSnapshot = await getDocs(transQuery);
+            results = transSnapshot.docs.map(doc => {
+              const data = doc.data();
+              return {
+                id: doc.id,
+                name: `${data.type} - ${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(data.amount)}`,
+                date: formatActivityTimestamp(data.created_at)
+              };
+            });
+          }
+          break;
+
+        case 'user_overrides':
+          // Get overrides by user ID
+          const overridesQuery = query(
+            collection(db, 'user_overrides'),
+            where('user_id', '==', searchValue)
+          );
+          const overridesSnapshot = await getDocs(overridesQuery);
+          results = overridesSnapshot.docs.map(doc => ({
+            id: doc.id,
+            name: `Override for ${doc.data().user_id}`,
+            type: doc.data().type
+          }));
+          break;
+      }
+
       setDocumentIds(results);
       
       // If we found exactly one result, select it automatically
@@ -135,7 +251,7 @@ export default function AdminDatabaseEditor() {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
         <h2 className="text-xl font-semibold mb-4">Database Collection Manager</h2>
         <p className="text-gray-600 dark:text-gray-400 mb-4">
-          Select a collection and search for a document to manage. Use with extreme caution.
+          Search and manage specific collections. Use with caution.
         </p>
         
         <div className="flex gap-4 items-center mb-4">
@@ -163,13 +279,13 @@ export default function AdminDatabaseEditor() {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   onKeyPress={handleSearchKeyPress}
-                  placeholder="Search by ID, email, name, or URL..."
-                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
+                  placeholder={getSearchPlaceholder(selectedCollection)}
+                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
                 />
                 <button
                   onClick={handleSearch}
                   disabled={loading}
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                  className="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors duration-200 disabled:opacity-50"
                 >
                   Search
                 </button>
@@ -187,7 +303,7 @@ export default function AdminDatabaseEditor() {
                   <option value="">Select a document</option>
                   {documentIds.map((doc) => (
                     <option key={doc.id} value={doc.id}>
-                      {doc.id} {doc.name ? `(${doc.name})` : ''} {doc.email ? `(${doc.email})` : ''} {doc.url ? `(${doc.url})` : ''}
+                      {doc.id} {doc.name ? ` - ${doc.name}` : ''} {doc.date ? ` (${doc.date})` : ''}
                     </option>
                   ))}
                 </select>
