@@ -1,31 +1,21 @@
-import { Geist, Geist_Mono } from "next/font/google";
-import { AuthProvider } from "../context/AuthContext";
-import "./globals.css";
+import { Geist } from 'next/font/google';
+import ClientLayout from './ClientLayout';
+import './globals.css';
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const geist = Geist({ subsets: ['latin'] });
 
 export const metadata = {
-  title: "Limiter - Stay Focused with Smart Tab Blocking",
-  description: "Premium plans for Limiter Chrome extension - block distracting websites with configurable timers and smart tracking.",
+  title: 'Limiter - Take Control of Your Time',
+  description: 'Manage your online time effectively with Limiter',
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        <AuthProvider>
+    <html lang="en" className={geist.className}>
+      <body suppressHydrationWarning className="min-h-screen bg-background text-foreground">
+        <ClientLayout>
           {children}
-        </AuthProvider>
+        </ClientLayout>
       </body>
     </html>
   );

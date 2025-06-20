@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { useAuth } from "../context/AuthContext";
 import { checkAdminStatus } from "../lib/firebase";
+import Loader from './Loader';
 
 export default function Navbar({ onNavigate }) {
   const { user, logout, loading } = useAuth();
@@ -70,17 +71,11 @@ export default function Navbar({ onNavigate }) {
         console.log("📝 Navigating to signup");
         router.push('/signup');
       } else if (section === 'features') {
-        console.log("⚡ Scrolling to features");
-        const element = document.getElementById('features');
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth' });
-        }
+        console.log("⚡ Navigating to features");
+        router.push('/#features');
       } else if (section === 'premium-plans') {
-        console.log("💎 Scrolling to premium-plans");
-        const element = document.getElementById('premium-plans');
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth' });
-        }
+        console.log("💎 Navigating to pricing");
+        router.push('/#premium-plans');
       } else {
         // For any other anchor links within the current page
         console.log("🔗 Scrolling to element:", section);
@@ -121,13 +116,13 @@ export default function Navbar({ onNavigate }) {
         <div className="hidden md:flex gap-8 items-center">
           <button
             onClick={() => handleNavigation('features')}
-            className="text-foreground hover:text-primary-light transition-colors"
+            className="text-foreground hover:text-primary-light transition-colors cursor-pointer"
           >
             Features
           </button>
           <button
             onClick={() => handleNavigation('premium-plans')}
-            className="text-foreground hover:text-primary-light transition-colors"
+            className="text-foreground hover:text-primary-light transition-colors cursor-pointer"
           >
             Pricing
           </button>
@@ -139,28 +134,32 @@ export default function Navbar({ onNavigate }) {
                   console.log("📊 Dashboard button clicked!");
                   handleNavigation('dashboard');
                 }}
-                className="text-foreground hover:text-primary-light transition-colors"
+                className="text-foreground hover:text-primary-light transition-colors cursor-pointer"
               >
                 Dashboard
               </button>
 
               {/* Admin Panel Button - Only show for admin users */}
-              {isAdmin && !adminLoading && (
-                <button
-                  onClick={() => {
-                    console.log("🛠️ Admin Panel button clicked!");
-                    handleNavigation('admin');
-                  }}
-                  className="text-red-600 hover:text-red-700 transition-colors font-medium"
-                  title="Admin Panel"
-                >
-                  🛠️ Admin
-                </button>
+              {!adminLoading ? (
+                isAdmin && (
+                  <button
+                    onClick={() => {
+                      console.log("🛠️ Admin Panel button clicked!");
+                      handleNavigation('admin');
+                    }}
+                    className="text-red-600 hover:text-red-700 transition-colors font-medium cursor-pointer"
+                    title="Admin Panel"
+                  >
+                    🛠️ Admin
+                  </button>
+                )
+              ) : (
+                <Loader size="sm" color="red" />
               )}
 
               <button
                 onClick={handleLogout}
-                className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-light transition-colors"
+                className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-light transition-colors cursor-pointer"
               >
                 Log Out
               </button>
@@ -172,7 +171,7 @@ export default function Navbar({ onNavigate }) {
                   console.log("🔐 Login button clicked!");
                   handleNavigation('login');
                 }}
-                className="text-foreground hover:text-primary-light transition-colors"
+                className="text-foreground hover:text-primary-light transition-colors cursor-pointer"
               >
                 Login
               </button>
@@ -181,7 +180,7 @@ export default function Navbar({ onNavigate }) {
                   console.log("📝 Signup button clicked!");
                   handleNavigation('signup');
                 }}
-                className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-light transition-colors"
+                className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-light transition-colors cursor-pointer"
               >
                 Sign Up
               </button>
@@ -191,7 +190,7 @@ export default function Navbar({ onNavigate }) {
 
         {/* Mobile menu button */}
         <button 
-          className="md:hidden text-foreground"
+          className="md:hidden text-foreground cursor-pointer"
           onClick={() => setIsMenuOpen(!isMenuOpen)}
         >
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-6 h-6">
@@ -202,17 +201,17 @@ export default function Navbar({ onNavigate }) {
 
       {/* Mobile menu */}
       {isMenuOpen && (
-        <div className="md:hidden absolute top-16 left-0 right-0 bg-background shadow-md z-50 py-4">
+        <div className="md:hidden absolute top-full left-0 right-0 bg-background border-t border-gray-200 dark:border-gray-700 py-4">
           <div className="container mx-auto px-4 flex flex-col gap-4">
             <button
               onClick={() => handleNavigation('features')}
-              className="text-foreground hover:text-primary-light transition-colors py-2 text-left"
+              className="text-foreground hover:text-primary-light transition-colors cursor-pointer text-left"
             >
               Features
             </button>
             <button
               onClick={() => handleNavigation('premium-plans')}
-              className="text-foreground hover:text-primary-light transition-colors py-2 text-left"
+              className="text-foreground hover:text-primary-light transition-colors cursor-pointer text-left"
             >
               Pricing
             </button>
@@ -220,31 +219,29 @@ export default function Navbar({ onNavigate }) {
             {user ? (
               <>
                 <button
-                  onClick={() => {
-                    console.log("📊 Mobile Dashboard button clicked!");
-                    handleNavigation('dashboard');
-                  }}
-                  className="text-foreground hover:text-primary-light transition-colors py-2 text-left"
+                  onClick={() => handleNavigation('dashboard')}
+                  className="text-foreground hover:text-primary-light transition-colors cursor-pointer text-left"
                 >
                   Dashboard
                 </button>
 
                 {/* Admin Panel Button - Mobile */}
-                {isAdmin && !adminLoading && (
-                  <button
-                    onClick={() => {
-                      console.log("🛠️ Mobile Admin Panel button clicked!");
-                      handleNavigation('admin');
-                    }}
-                    className="text-red-600 hover:text-red-700 transition-colors py-2 text-left font-medium"
-                  >
-                    🛠️ Admin Panel
-                  </button>
+                {!adminLoading ? (
+                  isAdmin && (
+                    <button
+                      onClick={() => handleNavigation('admin')}
+                      className="text-red-600 hover:text-red-700 transition-colors font-medium cursor-pointer text-left"
+                    >
+                      🛠️ Admin
+                    </button>
+                  )
+                ) : (
+                  <Loader size="sm" color="red" />
                 )}
 
                 <button
                   onClick={handleLogout}
-                  className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-light transition-colors text-center"
+                  className="text-foreground hover:text-primary-light transition-colors cursor-pointer text-left"
                 >
                   Log Out
                 </button>
@@ -252,20 +249,14 @@ export default function Navbar({ onNavigate }) {
             ) : (
               <>
                 <button
-                  onClick={() => {
-                    console.log("🔐 Mobile Login button clicked!");
-                    handleNavigation('login');
-                  }}
-                  className="text-foreground hover:text-primary-light transition-colors py-2 text-left"
+                  onClick={() => handleNavigation('login')}
+                  className="text-foreground hover:text-primary-light transition-colors cursor-pointer text-left"
                 >
                   Login
                 </button>
                 <button
-                  onClick={() => {
-                    console.log("📝 Mobile Signup button clicked!");
-                    handleNavigation('signup');
-                  }}
-                  className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary-light transition-colors text-center"
+                  onClick={() => handleNavigation('signup')}
+                  className="text-foreground hover:text-primary-light transition-colors cursor-pointer text-left"
                 >
                   Sign Up
                 </button>

@@ -180,6 +180,7 @@ export default function Checkout() {
         console.log("🔄 Processing subscription upgrade to:", selectedPlan);
         
         // Call our API to update the subscription
+        console.log("🔄 Processing subscription upgrade to:", selectedPlan, user, cardNumber, expiryDate, cvv, nameOnCard);
         const response = await fetch('/api/update-subscription', {
           method: 'POST',
           headers: {
@@ -187,7 +188,14 @@ export default function Checkout() {
           },
           body: JSON.stringify({
             plan: selectedPlan,
-            userId: user.uid
+            userId: user.uid,
+            paymentData: {
+              cardNumber: cardNumber.replace(/\s/g, ''),
+              expiryDate,
+              cvv,
+              nameOnCard,
+              paymentMethod: 'card'
+            }
           }),
         });
 
@@ -360,7 +368,22 @@ export default function Checkout() {
                           min="1"
                           max="100"
                           value={overrideQuantity}
-                          onChange={(e) => setOverrideQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            if (value === '') {
+                              setOverrideQuantity('');
+                            } else {
+                              const num = parseInt(value);
+                              if (!isNaN(num)) {
+                                setOverrideQuantity(Math.min(100, Math.max(1, num)));
+                              }
+                            }
+                          }}
+                          onBlur={() => {
+                            if (overrideQuantity === '' || overrideQuantity < 1) {
+                              setOverrideQuantity(1);
+                            }
+                          }}
                           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-700"
                         />
                       </div>
