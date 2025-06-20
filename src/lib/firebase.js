@@ -1882,11 +1882,12 @@ export const adminSoftDeleteSite = async (siteId, reason = "Admin soft deleted")
   }
 };
 
-export const adminHardDeleteSite = async (siteId, reason = "Admin hard deleted") => {
-  try {    
+export const adminHardDeleteSite = async (siteId, reason = "Admin deleted") => {
+  try {
+    // Get site data before deletion for audit log
     const siteDoc = await getDoc(doc(db, 'blocked_sites', siteId));
     const siteData = siteDoc.exists() ? siteDoc.data() : null;
-    
+ 
     if (siteData) {
       await addDoc(collection(db, 'admin_audit_log'), {
         action: 'hard_delete_site',
@@ -1897,11 +1898,14 @@ export const adminHardDeleteSite = async (siteId, reason = "Admin hard deleted")
       });
     }
     
+    // Update admin stats to decrease site count
+    await updateSiteStats(null, 'delete');
+    
     await deleteDoc(doc(db, 'blocked_sites', siteId));
     
-    return { success: true, message: "Site permanently deleted" };
+    return { success: true, message: "Site deleted successfully" };
   } catch (error) {
-    console.error("❌ Admin error hard deleting site:", error);
+    console.error("Error in adminHardDeleteSite:", error);
     throw error;
   }
 };
@@ -2881,13 +2885,7 @@ export const ensureUserProfile = async (userId) => {
     if (userData.override_balance === undefined) updates.override_balance = 0;
     if (userData.total_spent === undefined) updates.total_spent = 0;
     if (userData.last_purchase === undefined) updates.last_purchase = null;
-    if (!userData.settings) {
-      updates.settings = {
-        notifications: true,
-        theme: 'light',
-        email_updates: true
-      };
-    }
+ 
     
     // Only update if there are missing fields
     if (Object.keys(updates).length > 0) {
