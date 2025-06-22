@@ -6,6 +6,7 @@ import Link from "next/link";
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
 import { useAuth } from "../../context/AuthContext";
+import { purchaseOverrides, updateUserSubscription } from "../../lib/firebase";
 
 export default function Checkout() {
   const { user, loading } = useAuth();
@@ -83,7 +84,7 @@ export default function Checkout() {
       setSelectedPlan(planFromUrl);
     } else {
       // Redirect to pricing if no valid purchase type
-      router.push("/pricing");
+      router.push("/dashboard");
     }
 
     // Set user email if available
@@ -145,33 +146,13 @@ export default function Checkout() {
     try {
       if (purchaseType === "overrides") {
         console.log("🔄 Processing override purchase:", overrideQuantity);
-        
-        // Call our API to purchase overrides
-        const response = await fetch('/api/purchase-overrides', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            userId: user.uid,
-            quantity: overrideQuantity,
-            paymentData: {
-              cardNumber: cardNumber.replace(/\s/g, ''),
-              expiryDate,
-              cvv,
-              nameOnCard,
-              paymentMethod: 'card'
-            }
-          }),
+        await purchaseOverrides(user.uid, overrideQuantity, {
+          cardNumber: cardNumber.replace(/\s/g, ''),
+          expiryDate,
+          cvv,
+          nameOnCard,
+          paymentMethod: 'card'
         });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to purchase overrides');
-        }
-
-        console.log("✅ Overrides purchased successfully:", data);
         
         // Redirect to dashboard with success message
         router.push("/dashboard?purchase=overrides");
@@ -181,31 +162,13 @@ export default function Checkout() {
         
         // Call our API to update the subscription
         console.log("🔄 Processing subscription upgrade to:", selectedPlan, user, cardNumber, expiryDate, cvv, nameOnCard);
-        const response = await fetch('/api/update-subscription', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            plan: selectedPlan,
-            userId: user.uid,
-            paymentData: {
-              cardNumber: cardNumber.replace(/\s/g, ''),
-              expiryDate,
-              cvv,
-              nameOnCard,
-              paymentMethod: 'card'
-            }
-          }),
+        const response = await updateUserSubscription(user.uid, selectedPlan, {
+          cardNumber: cardNumber.replace(/\s/g, ''),
+          expiryDate,
+          cvv,
+          nameOnCard,
+          paymentMethod: 'card'
         });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to update subscription');
-        }
-
-        console.log("✅ Subscription updated successfully:", data);
         
         // Redirect to dashboard with success message
         router.push("/dashboard?payment=success");

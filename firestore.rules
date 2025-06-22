@@ -1,33 +1,133 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Users collection
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
     }
     
-    // Blocked sites collection with new schema
-    // Document ID format: {user_id}_{normalized_domain}
+    function isAdmin() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      allow create: if isAuthenticated() && isOwner(userId);
+      allow update: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      allow delete: if isAdmin();
+    }
+    
+    // Blocked sites collection
     match /blocked_sites/{siteId} {
-      allow read, write: if request.auth != null 
-        && siteId.matches('^' + request.auth.uid + '_.*');
-      
-      // Alternative rule that also checks the user_id field for extra security
-      allow read, write: if request.auth != null 
-        && request.auth.uid == resource.data.user_id;
+      allow read: if isAuthenticated() && (
+        siteId.matches('^' + request.auth.uid + '_.*') || 
+        resource.data.user_id == request.auth.uid ||
+        isAdmin()
+      );
+      allow write: if isAuthenticated() && (
+        siteId.matches('^' + request.auth.uid + '_.*') || 
+        request.resource.data.user_id == request.auth.uid ||
+        isAdmin()
+      );
     }
     
     // Subscriptions collection
     match /subscriptions/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      allow write: if isAuthenticated() && (isOwner(userId) || isAdmin());
     }
     
     // User overrides collection
     match /user_overrides/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if isAuthenticated() && (
+        userId == request.auth.uid || 
+        isAdmin()
+      );
+      allow write: if isAuthenticated() && (
+        userId == request.auth.uid || 
+        isAdmin()
+      );
     }
     
+    // Transactions collection
+    match /transactions/{transactionId} {
+      function isValidTransaction() {
+        let data = request.resource.data;
+        return data.keys().hasAll(['user_id', 'type', 'amount', 'status', 'payment_method', 'created_at']) &&
+          data.user_id == request.auth.uid &&
+          data.amount is number &&
+          data.amount > 0 &&
+          (data.type in ['plan_purchase', 'override_purchase']) &&
+          (data.status in ['pending', 'completed', 'failed']) &&
+          data.payment_method is string &&
+          data.created_at is timestamp;
+      }
+
+      allow read: if isAuthenticated() && (
+        resource.data.user_id == request.auth.uid || 
+        isAdmin()
+      );
+      allow create: if isAuthenticated() && isValidTransaction();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    // User activity collection
+    match /user_activity/{activityId} {
+      allow read: if isAuthenticated() && (
+        resource.data.user_id == request.auth.uid || 
+        isAdmin()
+      );
+      allow create: if isAuthenticated() && (
+        request.resource.data.user_id == request.auth.uid || 
+        isAdmin()
+      );
+      allow update, delete: if isAdmin();
+    }
+    
+    match /override_history/{historyId} {
+      function isValidOverrideHistory() {
+        let data = request.resource.data;
+        return data.keys().hasAll(['user_id', 'site_url', 'timestamp', 'month', 'override_type', 'plan', 'created_at']) &&
+          data.user_id == request.auth.uid &&
+          data.site_url is string &&
+          data.timestamp is string &&
+          data.month is string &&
+          data.override_type is string &&
+          data.plan is string &&
+          data.created_at is string;
+      }
+
+      allow read: if isAuthenticated() && (
+        resource.data.user_id == request.auth.uid || 
+        isAdmin()
+      );
+      allow create: if isAuthenticated() && isValidOverrideHistory();
+      allow update: if false;  // Immutable records
+      allow delete: if false;  // No deletion allowed
+    }
+
+    
+    // Admin collections - only accessible by admins
+    match /admin_stats/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    match /admin_audit/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    match /admin_audit_log/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
     // Default deny all other access
     match /{document=**} {
       allow read, write: if false;

@@ -246,6 +246,7 @@ export const updateUserBlockedSitesCount = async (userId, change) => {
 
 export const addBlockedSite = async (userId, siteData) => {
   try {
+    console.log(auth)
     const normalizedDomain = normalizeDomain(siteData.url);
     const documentId = `${userId}_${normalizedDomain}`;
     
@@ -761,10 +762,11 @@ export const getUserOverrideStats = async (userId) => {
 
 
 
-export const purchaseOverrides = async (userId, quantity, amount) => {
+export const purchaseOverrides = async (userId, quantity, paymentData) => {
   try {
     const pricePerOverride = 1.99;
     const totalPrice = quantity * pricePerOverride;
+    console.log("Auth", auth)
     
     await new Promise(resolve => setTimeout(resolve, 1500));
     
@@ -2486,12 +2488,12 @@ export const updateUserStats = async (change, type) => {
 
 export const updateSiteStats = async (change, type) => {
   const statsRef = doc(db, 'admin_stats', 'global');
-
   try {
     await runTransaction(db, async (transaction) => {
-      const statsDoc = await transaction.get(statsRef);
+      let statsDoc = await transaction.get(statsRef);
       if (!statsDoc.exists()) {
-        throw new Error('Admin stats document does not exist');
+        await initializeAdminStats();
+        statsDoc = await transaction.get(statsRef);
       }
       const stats = statsDoc.data();
 

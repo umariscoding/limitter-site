@@ -1033,7 +1033,8 @@ export default function AdminPanel() {
                       
                       <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
                         <div className="text-2xl font-semibold text-gray-900 dark:text-white">
-                          ${selectedUser.summary?.totalSpent?.toFixed(2) || '0.00'}
+                          {console.log(selectedUser)}
+                          ${selectedUser.profile?.total_spent?.toFixed(2) || '0.00'}
                         </div>
                         <div className="text-sm text-gray-600 dark:text-gray-400">Total Spent</div>
                       </div>

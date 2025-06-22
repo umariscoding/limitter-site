@@ -225,7 +225,7 @@ export default function Analytics({ onBack, user, subscription, blockedSites, ov
             
             <div className="flex gap-3 justify-center">
               <Link
-                href="/pricing"
+                href="/#pricing"
                 className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 transition-all duration-200 font-semibold shadow-lg hover:shadow-xl"
               >
                 View Plans & Pricing
@@ -443,7 +443,7 @@ export default function Analytics({ onBack, user, subscription, blockedSites, ov
                 Subscription Plan
               </h3>
               {subscription?.plan === 'free' && (
-                <Link href="/pricing" className="text-xs text-primary hover:underline">
+                <Link href="/#pricing" className="text-xs text-primary hover:underline">
                   Upgrade
                 </Link>
               )}

@@ -446,7 +446,7 @@ export default function Dashboard() {
                             Get unlimited tracking, multiple devices, and AI features with Pro or Elite plans.
                           </p>
                           <Link
-                            href="/pricing"
+                            href="/#pricing"
                             className="inline-flex px-4 py-2 bg-primary text-white text-sm rounded-md hover:bg-primary/90 transition-colors"
                           >
                             View Plans
