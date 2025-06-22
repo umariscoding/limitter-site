@@ -27,7 +27,6 @@ export default function Dashboard() {
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [overrideStats, setOverrideStats] = useState(null);
   const [overridePurchaseSuccess, setOverridePurchaseSuccess] = useState(false);
-  const [activeTab, setActiveTab] = useState('sites');
 
   // Define fetchDashboardData outside useEffect
   const fetchDashboardData = async () => {
@@ -804,51 +803,6 @@ export default function Dashboard() {
         onClose={handleCloseBlockedSitesModal}
         onEditSite={handleEditSite}
       />
-
-      {/* Navigation Tabs */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8">
-            <button
-              onClick={() => setActiveTab('sites')}
-              className={`${
-                activeTab === 'sites'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-            >
-              Sites
-            </button>
-            <button
-              onClick={() => setActiveTab('transactions')}
-              className={`${
-                activeTab === 'transactions'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-            >
-              Transactions
-            </button>
-            <button
-              onClick={() => setActiveTab('settings')}
-              className={`${
-                activeTab === 'settings'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
-            >
-              Settings
-            </button>
-          </nav>
-        </div>
-      </div>
-
-      {/* Content Sections */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {activeTab === 'sites' && <SiteManager userId={user.uid} onUpdate={fetchDashboardData} />}
-        {activeTab === 'transactions' && <UserTransactions userId={user.uid} />}
-        {activeTab === 'settings' && <Settings userId={user.uid} />}
-      </div>
 
       <Footer />
     </>
