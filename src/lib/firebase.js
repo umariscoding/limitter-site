@@ -28,13 +28,13 @@ import {
 } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDmeE0h4qlRTs8c87bQhvh8Hvfe0NZsqmQ",
-  authDomain: "testing-396cd.firebaseapp.com",
-  projectId: "testing-396cd",
-  storageBucket: "testing-396cd.firebasestorage.app",
-  messagingSenderId: "327238443846",
-  appId: "1:327238443846:web:72732cb7e7d200c4327b47",
-  measurementId: "G-XKPB99GTGF"
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
 };
 
 if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
@@ -102,15 +102,6 @@ export const logOut = async () => {
     throw new Error(error.message);
   }
 };
-
-// export const getSession = () => {
-//   return new Promise((resolve) => {
-//     const unsubscribe = onAuthStateChanged(auth, (user) => {
-//       unsubscribe();
-//       resolve({ data: { session: user ? { user } : null } });
-//     });
-//   });
-// };
 
 export const createUserProfile = async (userId, userData) => {
   try {
@@ -406,62 +397,6 @@ export const removeBlockedSite = async (siteId) => {
     throw error;
   }
 };
-
-// export const getAllBlockedSites = async (userId) => {
-//   return await getBlockedSites(userId, true);
-// };
-
-// export const getBlockedSiteByDomain = async (userId, domain) => {
-//   try {
-//     const normalizedDomain = normalizeDomain(domain);
-//     const documentId = `${userId}_${normalizedDomain}`;
-    
-//     const siteDoc = await getDoc(doc(db, 'blocked_sites', documentId));
-//     if (siteDoc.exists()) {
-//       return { id: siteDoc.id, ...siteDoc.data() };
-//     }
-//     return null;
-//   } catch (error) {
-//     console.error("Error in getBlockedSiteByDomain:", error);
-//     return null;
-//   }
-// };
-
-// export const updateSiteUsageAnalytics = async (userId, domain, timeSpentSeconds) => {
-//   try {
-//     const normalizedDomain = normalizeDomain(domain);
-//     const documentId = `${userId}_${normalizedDomain}`;
-    
-//     const siteDoc = await getDoc(doc(db, 'blocked_sites', documentId));
-//     if (!siteDoc.exists()) {
-//       console.warn(`Site ${domain} not found for user ${userId}`);
-//       return null;
-//     }
-
-//     const siteData = siteDoc.data();
-//     const today = new Date().toISOString().split('T')[0];
-    
-//     const dailyUsage = siteData.daily_usage || {};
-//     dailyUsage[today] = (dailyUsage[today] || 0) + timeSpentSeconds;
-    
-//     const updateData = {
-//       daily_usage: dailyUsage,
-//       total_time_spent: (siteData.total_time_spent || 0) + timeSpentSeconds,
-//       access_count: (siteData.access_count || 0) + 1,
-//       last_accessed: serverTimestamp(),
-//       updated_at: serverTimestamp(),
-//     };
-
-//     await updateDoc(doc(db, 'blocked_sites', documentId), updateData);
-    
-//     return updateData;
-//   } catch (error) {
-//     console.error("Error updating site usage analytics:", error);
-//     throw error;
-//   }
-// };
-
-
 
 export const getUserSubscription = async (userId) => {
   try {
@@ -760,8 +695,6 @@ export const getUserOverrideStats = async (userId) => {
   }
 };
 
-
-
 export const purchaseOverrides = async (userId, quantity, paymentData) => {
   try {
     const pricePerOverride = 1.99;
@@ -999,7 +932,6 @@ const getFeaturesByPlan = (plan) => {
   
   return features[plan] || features.free;
 };
-
 
 export const updateSiteTimeTracking = async (userId, domain, timeSpentSeconds) => {
   try {
@@ -1999,46 +1931,6 @@ export const adminGetSystemStats = async () => {
       // getTransactions(null, 10)
     ]);
 
-    // // Calculate transaction trends
-    // const transactionTrends = {
-    //   recent_transactions: recentTransactions.map(t => ({
-    //     id: t.id,
-    //     user_id: t.user_id,
-    //     type: t.type,
-    //     amount: t.amount,
-    //     status: t.status,
-    //     date: t.created_at,
-    //     description: t.description,
-    //     formattedAmount: new Intl.NumberFormat('en-US', {
-    //       style: 'currency',
-    //       currency: 'USD'
-    //     }).format(t.amount || 0),
-    //     formattedDate: formatActivityTimestamp(t.created_at)
-    //   })),
-    //   daily_volume: {},
-    //   payment_methods: {},
-    //   success_rate: 0,
-    //   transaction_types: {}
-    // };
-
-    // // Calculate success rate and transaction types
-    // const completedTransactions = recentTransactions.filter(t => t.status === 'completed').length;
-    // transactionTrends.success_rate = (completedTransactions / recentTransactions.length) * 100;
-
-    // recentTransactions.forEach(t => {
-    //   // Count by payment method
-    //   transactionTrends.payment_methods[t.payment_method] = 
-    //     (transactionTrends.payment_methods[t.payment_method] || 0) + 1;
-      
-    //   // Count by transaction type
-    //   transactionTrends.transaction_types[t.type] = 
-    //     (transactionTrends.transaction_types[t.type] || 0) + 1;
-
-    //   // Group by day for volume trend
-    //   const day = new Date(t.created_at.seconds * 1000).toISOString().split('T')[0];
-    //   transactionTrends.daily_volume[day] = (transactionTrends.daily_volume[day] || 0) + t.amount;
-    // });
-
     const enhancedStats = {
       ...stats,
       // transactions: {
@@ -2511,8 +2403,6 @@ export const updateSiteStats = async (change, type) => {
     throw error;
   }
 };
-
-
 
 export const getAdminStats = async () => {
   try {

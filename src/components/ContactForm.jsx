@@ -47,7 +47,7 @@ export default function ContactForm() {
         </div>
         <h4 className="text-xl font-semibold mb-2">Message Sent!</h4>
         <p className="text-gray-dark dark:text-gray mb-4">
-          Thank you for contacting us. We'll get back to you within 24 hours.
+          Thank you for contacting us. We&apos;ll get back to you within 24 hours.
         </p>
         <button
           onClick={() => setIsSubmitted(false)}

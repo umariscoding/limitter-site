@@ -113,7 +113,7 @@ export default function LoginForm({ onSuccess, onSignupClick }) {
         </form>
         
         <p className="text-center mt-8 text-sm text-gray-dark dark:text-gray">
-          Don't have an account?{" "}
+          Don&apos;t have an account?{" "}
           <button onClick={onSignupClick} className="text-primary hover:underline">
             Sign up
           </button>

@@ -108,7 +108,7 @@ export default function Home() {
                     <div className="p-6">
                       <h3 className="text-lg font-semibold mb-2">YouTube has been blocked</h3>
                       <p className="text-sm text-gray-dark dark:text-gray mb-4">
-                        You've reached your time limit for this website. Time to focus on what matters!
+                        You&apos;ve reached your time limit for this website. Time to focus on what matters!
                       </p>
                       <div className="flex justify-end">
                         <button className="text-sm text-primary">Learn more about Premium</button>
@@ -164,7 +164,7 @@ export default function Home() {
                 </div>
                 <h3 className="text-xl font-semibold mb-2">Usage Analytics</h3>
                 <p className="text-gray-dark dark:text-gray">
-                  Track your browsing habits and see how much time you're saving. Set goals and improve over time.
+                  Track your browsing habits and see how much time you&apos;re saving. Set goals and improve over time.
                 </p>
               </div>
             </div>
@@ -185,7 +185,7 @@ export default function Home() {
               {/* Free Plan */}
               <div className="border border-gray-light dark:border-gray-dark/30 rounded-xl p-6">
                 <h3 className="text-xl font-semibold mb-2">Free</h3>
-                <p className="text-gray-dark dark:text-gray mb-4">Basic features for casual users</p>
+                <p className="text-gray-dark dark:text-gray mb-4">Basic features for casual users </p>
                 <div className="text-3xl font-bold mb-6">$0 <span className="text-sm font-normal text-gray-dark dark:text-gray">/month</span></div>
                 
                 <ul className="space-y-3 mb-8">
@@ -351,7 +351,7 @@ export default function Home() {
                   </div>
                 </div>
                 <p className="text-gray-dark dark:text-gray">
-                  "Limiter has transformed how I work. I used to waste hours on social media, but now I'm able to stay focused and get more done."
+                  "Limiter has transformed how I work. I used to waste hours on social media, but now I&apos;m able to stay focused and get more done."
                 </p>
                 <div className="mt-4 flex">
                   {[1, 2, 3, 4, 5].map((star) => (
@@ -395,7 +395,7 @@ export default function Home() {
                   </div>
                 </div>
                 <p className="text-gray-dark dark:text-gray">
-                  "As a student, it's so easy to get distracted online. Limiter helps me stay on track with my studies and avoid procrastination."
+                  "As a student, it&apos;s so easy to get distracted online. Limiter helps me stay on track with my studies and avoid procrastination."
                 </p>
                 <div className="mt-4 flex">
                   {[1, 2, 3, 4, 5].map((star, i) => (

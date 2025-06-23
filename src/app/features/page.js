@@ -32,7 +32,7 @@ export default function Features() {
               </div>
               <h2 className="text-3xl font-bold mb-4">Intelligent timers that work the way you do</h2>
               <p className="text-gray-dark dark:text-gray mb-6">
-                Our timers are designed to be fair and adaptive. They only count down when you're actively viewing a specific website, automatically pausing when you switch tabs and resuming when you return.
+                Our timers are designed to be fair and adaptive. They only count down when you&apos;re actively viewing a specific website, automatically pausing when you switch tabs and resuming when you return.
               </p>
               
               <ul className="space-y-4">
@@ -55,7 +55,7 @@ export default function Features() {
                   <div>
                     <h3 className="font-semibold">Automatic Pause &amp; Resume</h3>
                     <p className="text-gray-dark dark:text-gray text-sm">
-                      Timers only count down when you're actively using a site. Switch tabs, and the timer pauses automatically.
+                      Timers only count down when you&apos;re actively using a site. Switch tabs, and the timer pauses automatically.
                     </p>
                   </div>
                 </li>
@@ -231,7 +231,7 @@ export default function Features() {
               </div>
               <h2 className="text-3xl font-bold mb-4">Beautiful, distraction-free blocking</h2>
               <p className="text-gray-dark dark:text-gray mb-6">
-                When your time is up, Limiter displays a clean, modern blocking modal that can't be easily dismissed, helping you break the habit of mindless browsing.
+                When your time is up, Limiter displays a clean, modern blocking modal that can&apos;t be easily dismissed, helping you break the habit of mindless browsing.
               </p>
               
               <ul className="space-y-4">
@@ -242,7 +242,7 @@ export default function Features() {
                   <div>
                     <h3 className="font-semibold">Non-Dismissable Modal</h3>
                     <p className="text-gray-dark dark:text-gray text-sm">
-                      Blocking modal can't be easily closed, forcing you to take a break or switch to a more productive task.
+                      Blocking modal can&apos;t be easily closed, forcing you to take a break or switch to a more productive task.
                     </p>
                   </div>
                 </li>
@@ -283,13 +283,13 @@ export default function Features() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                     </div>
-                    <h3 className="text-xl font-bold mb-2">Time's Up!</h3>
+                    <h3 className="text-xl font-bold mb-2">Time&apos;s Up!</h3>
                     <p className="text-gray-dark dark:text-gray mb-6">
-                      You've reached your time limit for <span className="font-semibold">YouTube</span>. Time to focus on something more productive!
+                      You&apos;ve reached your time limit for <span className="font-semibold">YouTube</span>. Time to focus on something more productive!
                     </p>
                     <div className="p-4 bg-gray-light dark:bg-gray-dark/30 rounded-lg mb-6">
                       <p className="text-sm italic">
-                        "The key is not to prioritize what's on your schedule, but to schedule your priorities." - Stephen Covey
+                        "The key is not to prioritize what&apos;s on your schedule, but to schedule your priorities." - Stephen Covey
                       </p>
                     </div>
                     <div>
@@ -313,7 +313,7 @@ export default function Features() {
             <h2 className="text-3xl font-bold mb-4">Detailed usage analytics</h2>
             <p className="text-xl text-gray-dark dark:text-gray max-w-2xl mx-auto">
               Understand your browsing habits with comprehensive analytics and reports.
-              Track your progress and see how much time you're saving.
+              Track your progress and see how much time you&apos;re saving.
             </p>
           </div>
           
@@ -410,7 +410,7 @@ export default function Features() {
               </div>
               <h3 className="text-xl font-semibold mb-2">Privacy First</h3>
               <p className="text-gray-dark dark:text-gray">
-                All data stays on your device. We don't track your browsing history or collect personal information.
+                All data stays on your device. We don&apos;t track your browsing history or collect personal information.
               </p>
             </div>
             
@@ -435,7 +435,7 @@ export default function Features() {
               </div>
               <h3 className="text-xl font-semibold mb-2">Smart Notifications</h3>
               <p className="text-gray-dark dark:text-gray">
-                Get gentle reminders when you're spending too much time on distracting sites.
+                Get gentle reminders when you&apos;re spending too much time on distracting sites.
               </p>
             </div>
           </div>

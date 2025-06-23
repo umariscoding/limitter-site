@@ -217,9 +217,9 @@ export default function Checkout() {
             <h1 className="text-3xl font-bold mb-2">Complete Your Purchase</h1>
             <p className="text-gray-600 dark:text-gray-400">
               {purchaseType === "overrides" ? (
-                <>You're purchasing <span className="font-semibold text-primary">{overrideQuantity} override{overrideQuantity > 1 ? 's' : ''}</span></>
+                <>You&apos;re purchasing <span className="font-semibold text-primary">{overrideQuantity} override{overrideQuantity > 1 ? 's' : ''}</span></>
               ) : (
-                <>You're upgrading to <span className="font-semibold text-primary">{plan.name}</span></>
+                <>You&apos;re upgrading to <span className="font-semibold text-primary">{plan.name}</span></>
               )}
             </p>
           </div>
@@ -255,7 +255,7 @@ export default function Checkout() {
                 {/* Features for Plans */}
                 {purchaseType === "plan" && plan && (
                   <div>
-                    <h4 className="font-medium mb-3">What's included:</h4>
+                    <h4 className="font-medium mb-3">What&apos;s included:</h4>
                     <ul className="space-y-2">
                       {plan.features.map((feature, index) => (
                         <li key={index} className="flex items-center text-sm">

@@ -1331,7 +1331,7 @@ export default function AdminPanel() {
                   </div>
                   <div>
                     <h3 className="text-xl font-bold">Change Subscription Plan</h3>
-                    <p className="text-blue-100 text-sm">Upgrade or modify user's subscription tier</p>
+                    <p className="text-blue-100 text-sm">Upgrade or modify user&apos;s subscription tier</p>
                   </div>
                 </div>
               </div>
@@ -1738,7 +1738,7 @@ export default function AdminPanel() {
                       No Sites Found
                     </h3>
                     <p className="text-gray-600 dark:text-gray-400">
-                      This user hasn't added any blocked sites yet.
+                      This user hasn&apos;t added any blocked sites yet.
                     </p>
                   </div>
                 )}
