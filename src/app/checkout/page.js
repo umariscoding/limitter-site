@@ -8,6 +8,9 @@ import Footer from "../../components/Footer";
 import { useAuth } from "../../context/AuthContext";
 import { purchaseOverrides, updateUserSubscription } from "../../lib/firebase";
 
+// Prevent static page generation
+export const dynamic = 'force-dynamic';
+
 export default function Checkout() {
   const { user, loading } = useAuth();
   const router = useRouter();

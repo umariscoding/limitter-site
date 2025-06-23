@@ -1,4 +1,4 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps } from 'firebase/app';
 import { 
   getAuth, 
   createUserWithEmailAndPassword, 
@@ -37,14 +37,17 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
 };
 
+// Initialize Firebase only if it hasn't been initialized and we're on the client side
+const app = typeof window !== 'undefined' && !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
+
+// Only initialize auth and firestore if we're on the client side
+const auth = typeof window !== 'undefined' ? getAuth(app) : null;
+const db = typeof window !== 'undefined' ? getFirestore(app) : null;
+
 if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
   console.error('❌ Missing Firebase configuration');
   throw new Error('Missing Firebase configuration');
 }
-
-const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const db = getFirestore(app);
 
 export const signUp = async (email, password, metadata = {}) => {
   try {
