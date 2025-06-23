@@ -26,28 +26,25 @@ export function AuthProvider({ children }) {
   const authStatePromiseResolvers = useRef([]);
 
   useEffect(() => {
-    // Only run auth listener on client side
-    if (typeof window !== 'undefined' && auth) {
-      const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-        try {
-          if (firebaseUser) {
-            const userProfile = await getUserProfile(firebaseUser.uid);
-            setUser(userProfile);
-          } else {
-            setUser(null);
-          }
-        } catch (error) {
-          console.error("Error in auth state change:", error);
-          setUser(null);
-        } finally {
-          setLoading(false);
-        }
-      });
+    // Listen for auth changes
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log("🔄 Auth state changed:", firebaseUser ? "User logged in" : "User logged out");
+      
+      if (firebaseUser) {
+        await handleAuthStateChange(firebaseUser);
+      } else {
+        console.log("🚪 Clearing user state (logout)");
+        setUser(null);
+        setUserStats(null);
+        setBlockedSites([]);
+        setLoading(false);
+        
+        authStatePromiseResolvers.current.forEach(resolve => resolve(null));
+        authStatePromiseResolvers.current = [];
+      }
+    });
 
-      return () => unsubscribe();
-    } else {
-      setLoading(false);
-    }
+    return () => unsubscribe();
   }, []);
 
   const handleAuthStateChange = async (firebaseUser) => {
