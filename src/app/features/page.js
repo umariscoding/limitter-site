@@ -289,7 +289,7 @@ export default function Features() {
                     </p>
                     <div className="p-4 bg-gray-light dark:bg-gray-dark/30 rounded-lg mb-6">
                       <p className="text-sm italic">
-                        "The key is not to prioritize what&apos;s on your schedule, but to schedule your priorities." - Stephen Covey
+                        The key is not to prioritize what&apos;s on your schedule, but to schedule your priorities. - Stephen Covey
                       </p>
                     </div>
                     <div>

@@ -351,7 +351,7 @@ export default function Home() {
                   </div>
                 </div>
                 <p className="text-gray-dark dark:text-gray">
-                  "Limiter has transformed how I work. I used to waste hours on social media, but now I&apos;m able to stay focused and get more done."
+                  Limiter has transformed how I work. I used to waste hours on social media, but now I&apos;m able to stay focused and get more done.
                 </p>
                 <div className="mt-4 flex">
                   {[1, 2, 3, 4, 5].map((star) => (
@@ -373,7 +373,7 @@ export default function Home() {
                   </div>
                 </div>
                 <p className="text-gray-dark dark:text-gray">
-                  "The Premium plan is worth every penny. I love being able to customize schedules for different types of work days. Game changer!"
+                  The Premium plan is worth every penny. I love being able to customize schedules for different types of work days. Game changer!
                 </p>
                 <div className="mt-4 flex">
                   {[1, 2, 3, 4, 5].map((star) => (
@@ -395,7 +395,7 @@ export default function Home() {
                   </div>
                 </div>
                 <p className="text-gray-dark dark:text-gray">
-                  "As a student, it&apos;s so easy to get distracted online. Limiter helps me stay on track with my studies and avoid procrastination."
+                  As a student, it&apos;s so easy to get distracted online. Limiter helps me stay on track with my studies and avoid procrastination.
                 </p>
                 <div className="mt-4 flex">
                   {[1, 2, 3, 4, 5].map((star, i) => (
