@@ -11,6 +11,7 @@ import SiteManager from "../../components/SiteManager";
 import BlockedSitesModal from "../../components/BlockedSitesModal";
 import { useAuth } from "../../context/AuthContext";
 import { getUserSubscription, getDashboardData, getUserOverrideStats } from "../../lib/firebase";
+import UserTransactions from '@/components/UserTransactions';
 
 export default function Dashboard() {
   const { user, userStats, blockedSites, loading, logout, refreshUserData } = useAuth();
@@ -26,6 +27,35 @@ export default function Dashboard() {
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [overrideStats, setOverrideStats] = useState(null);
   const [overridePurchaseSuccess, setOverridePurchaseSuccess] = useState(false);
+
+  // Define fetchDashboardData outside useEffect
+  const fetchDashboardData = async () => {
+    if (user?.uid) {
+      try {
+        console.log("📊 Loading dashboard data...");
+        setIsLoading(true);
+        
+        // Fetch enhanced dashboard data, subscription, and override stats in parallel
+        const [dashData, subData, overrideData] = await Promise.all([
+          getDashboardData(user.uid),
+          getUserSubscription(user.uid),
+          getUserOverrideStats(user.uid)
+        ]);
+        
+        console.log("📈 Dashboard data loaded:", dashData);
+        console.log("🎯 Override stats loaded:", overrideData);
+        
+        setDashboardData(dashData);
+        setSubscription(subData);
+        setOverrideStats(overrideData);
+        
+      } catch (error) {
+        console.error("❌ Error fetching dashboard data:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
 
   useEffect(() => {
     // Check for payment/purchase success from URL parameters
@@ -48,21 +78,7 @@ export default function Dashboard() {
         
         // Also refresh dashboard data to show updated subscription info
         if (user?.uid) {
-          const fetchUpdatedData = async () => {
-            try {
-              const [dashData, subData, overrideData] = await Promise.all([
-                getDashboardData(user.uid),
-                getUserSubscription(user.uid),
-                getUserOverrideStats(user.uid)
-              ]);
-              setDashboardData(dashData);
-              setSubscription(subData);
-              setOverrideStats(overrideData);
-            } catch (error) {
-              console.error("Error refreshing dashboard data:", error);
-            }
-          };
-          fetchUpdatedData();
+          fetchDashboardData();
         }
         
         // Hide the message after 5 seconds
@@ -102,33 +118,6 @@ export default function Dashboard() {
     }
 
     // Fetch all dashboard data if user exists
-    const fetchDashboardData = async () => {
-      if (user?.uid) {
-        try {
-          console.log("📊 Loading dashboard data...");
-          
-          // Fetch enhanced dashboard data, subscription, and override stats in parallel
-          const [dashData, subData, overrideData] = await Promise.all([
-            getDashboardData(user.uid),
-            getUserSubscription(user.uid),
-            getUserOverrideStats(user.uid)
-          ]);
-          
-          console.log("📈 Dashboard data loaded:", dashData);
-          console.log("🎯 Override stats loaded:", overrideData);
-          
-          setDashboardData(dashData);
-          setSubscription(subData);
-          setOverrideStats(overrideData);
-          
-        } catch (error) {
-          console.error("❌ Error fetching dashboard data:", error);
-        } finally {
-          setIsLoading(false);
-        }
-      }
-    };
-
     if (user) {
       fetchDashboardData();
     } else if (!loading) {
@@ -224,7 +213,7 @@ export default function Dashboard() {
         freeOverridesLimit = 15;
         break;
       case 'elite':
-        freeOverridesLimit = 999; // Unlimited
+        freeOverridesLimit = 200; // Unlimited
         break;
       default:
         freeOverridesLimit = 0; // Free plan gets 0 free overrides
@@ -245,7 +234,7 @@ export default function Dashboard() {
           {/* Header */}
           <div className="flex justify-between items-center mb-8">
             <div>
-              <h1 className="text-3xl font-bold mb-2">Welcome back, {user?.profileName || user?.name || user?.email}!</h1>
+              <h1 className="text-3xl font-bold mb-2">Welcome back{user?.profile_name ? `, ${user.profile_name}` : ''}!</h1>
               <p className="text-gray-600 dark:text-gray-400">Manage your Limiter settings and view your progress</p>
             </div>
           </div>
@@ -309,7 +298,7 @@ export default function Dashboard() {
           )}
 
           {/* Quick Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
               <div className="flex items-center">
                 <div className="p-2 bg-primary/10 rounded-lg">
@@ -320,7 +309,7 @@ export default function Dashboard() {
                 <div className="ml-4">
                   <p className="text-sm text-gray-600 dark:text-gray-400">Sites Tracking</p>
                   <p className="text-2xl font-bold">
-                    {dashboardData?.stats?.sitesBlocked ?? userStats?.totalSitesBlocked ?? blockedSites?.length ?? 0}
+                    {blockedSites.length}
                   </p>
                 </div>
               </div>
@@ -328,16 +317,30 @@ export default function Dashboard() {
             
             <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
               <div className="flex items-center">
-                <div className="p-2 bg-green-100 dark:bg-green-900 rounded-lg">
-                  <svg className="w-6 h-6 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <div className="p-2 bg-purple-100 dark:bg-purple-900 rounded-lg">
+                  <svg className="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 </div>
                 <div className="ml-4">
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Time Saved</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Average Time Limit</p>
                   <p className="text-2xl font-bold">
-                    {dashboardData?.stats?.timeSaved ? `${dashboardData.stats.timeSaved}h` : 
-                     userStats?.totalTimeSaved ? `${Math.round(userStats.totalTimeSaved / 60 * 10) / 10}h` : '0h'}
+                    {(() => {
+                      // Calculate average time limit from all active sites
+                      const activeSites = blockedSites?.filter(site => site.is_active !== false) || [];
+                      if (activeSites.length === 0) return '0m';
+                      
+                      const totalLimit = activeSites.reduce((sum, site) => sum + (site.time_limit || 1800), 0);
+                      const averageSeconds = Math.floor(totalLimit / activeSites.length);
+                      
+                      const hours = Math.floor(averageSeconds / 3600);
+                      const minutes = Math.floor((averageSeconds % 3600) / 60);
+                      
+                      if (hours > 0) {
+                        return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+                      }
+                      return `${minutes}m`;
+                    })()}
                   </p>
                 </div>
               </div>
@@ -354,23 +357,6 @@ export default function Dashboard() {
                   <p className="text-sm text-gray-600 dark:text-gray-400">Active Sites</p>
                   <p className="text-2xl font-bold">
                     {dashboardData?.stats?.activeSites ?? userStats?.activeSitesBlocked ?? 0}
-                  </p>
-                </div>
-              </div>
-            </div>
-            
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
-              <div className="flex items-center">
-                <div className="p-2 bg-purple-100 dark:bg-purple-900 rounded-lg">
-                  <svg className="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Today's Time</p>
-                  <p className="text-2xl font-bold">
-                    {dashboardData?.stats?.todayTime ? `${dashboardData.stats.todayTime}m` : 
-                     userStats?.todayTimeSpent ? `${Math.round(userStats.todayTimeSpent)}m` : '0m'}
                   </p>
                 </div>
               </div>
@@ -393,12 +379,13 @@ export default function Dashboard() {
                         />
                       ) : (
                         <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center text-white font-bold">
-                          {(user?.profileName || user?.name || user?.email)?.charAt(0).toUpperCase()}
+                          {(user?.profile_name || user?.name || user?.email)?.charAt(0).toUpperCase()}
                         </div>
                       )}
                       <div>
-                        <p className="font-medium">{user?.profileName || user?.name || 'User'}</p>
+                        <p className="font-medium">{user?.profile_name || user?.name || 'User'}</p>
                         <p className="text-sm text-gray-600 dark:text-gray-400">{user?.profileEmail || user?.email}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">ID: {user?.uid}</p>
                       </div>
                     </div>
                     
@@ -444,7 +431,6 @@ export default function Dashboard() {
                   blockedSites={blockedSites}
                   overrideStats={overrideStats}
                   dashboardData={dashboardData}
-                  userStats={userStats}
                 />
               ) : (
                 <>
@@ -460,7 +446,7 @@ export default function Dashboard() {
                             Get unlimited tracking, multiple devices, and AI features with Pro or Elite plans.
                           </p>
                           <Link
-                            href="/pricing"
+                            href="/#pricing"
                             className="inline-flex px-4 py-2 bg-primary text-white text-sm rounded-md hover:bg-primary/90 transition-colors"
                           >
                             View Plans
@@ -572,7 +558,7 @@ export default function Dashboard() {
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                             <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">
-                              {subscription?.plan === 'elite' ? '∞' : (overrideStats.overrides || 0)}
+                              {(overrideStats.overrides || 0)}
                             </div>
                             <div className="text-sm text-blue-700 dark:text-blue-300">Available Now</div>
                           </div>
@@ -713,10 +699,7 @@ export default function Dashboard() {
                           onClick={handleViewSitesClick}
                           className="text-sm text-primary hover:underline font-medium"
                         >
-                          {
-                            console.log(blockedSites)
-                          }
-                          View All ({dashboardData?.sites?.total ?? blockedSites.length}) →
+                          View All ({blockedSites.length}) →
                         </button>
                       </div>
                       
@@ -741,42 +724,46 @@ export default function Dashboard() {
                       ) : (
                         <div className="space-y-3">
                           {blockedSites.slice(0, 4).map((site) => (
-                            <div key={site.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                            <div 
+                              key={site.id} 
+                              className={`flex items-center gap-4 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 ${
+                                site.is_active === false ? 'opacity-60' : ''
+                              }`}
+                            >
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-3">
-                                  <div className="flex-1 min-w-0">
-                                    <h4 className="font-medium text-gray-900 dark:text-white truncate">
-                                      {site.name}
-                                    </h4>
-                                    <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                                      {site.url}
-                                    </p>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <div className={`px-2 py-1 rounded text-xs font-medium ${
-                                      site.isActive !== false
-                                        ? 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-400'
-                                        : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
-                                    }`}>
-                                      {site.isActive !== false ? 'Active' : 'Inactive'}
-                                    </div>
-                                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                                      {(() => {
-                                        const totalSeconds = site.time_limit || 1800; // Default 30 minutes
-                                        const hours = Math.floor(totalSeconds / 3600);
-                                        const minutes = Math.floor((totalSeconds % 3600) / 60);
-                                        const seconds = totalSeconds % 60;
-                                        
-                                        if (hours > 0) {
-                                          return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-                                        } else if (minutes > 0) {
-                                          return `${minutes}m`;
-                                        } else {
-                                          return `${seconds}s`;
-                                        }
-                                      })()}
-                                    </div>
-                                  </div>
+                                <h3 className="font-medium text-gray-900 dark:text-white truncate">
+                                  {site.name}
+                                </h3>
+                                <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                                  {site.url}
+                                </p>
+                                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">ID: {site.id}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className={`px-2 py-1 rounded text-xs font-medium ${
+                                  site.time_remaining === 0 || site.is_blocked
+                                    ? 'bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-400'
+                                    : site.is_active !== false
+                                    ? 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-400'
+                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
+                                }`}>
+                                  {site.time_remaining === 0 || site.is_blocked ? 'Blocked' : site.is_active !== false ? 'Active' : 'Inactive'}
+                                </div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  {(() => {
+                                    const totalSeconds = site.time_limit || 1800; // Default 30 minutes
+                                    const hours = Math.floor(totalSeconds / 3600);
+                                    const minutes = Math.floor((totalSeconds % 3600) / 60);
+                                    const seconds = totalSeconds % 60;
+                                    
+                                    if (hours > 0) {
+                                      return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+                                    } else if (minutes > 0) {
+                                      return `${minutes}m`;
+                                    } else {
+                                      return `${seconds}s`;
+                                    }
+                                  })()}
                                 </div>
                               </div>
                             </div>
@@ -817,8 +804,6 @@ export default function Dashboard() {
         onEditSite={handleEditSite}
       />
 
-
-      
       <Footer />
     </>
   );

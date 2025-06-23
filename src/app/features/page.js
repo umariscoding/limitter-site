@@ -458,7 +458,7 @@ export default function Features() {
                 Get Started Free
               </Link>
               <Link 
-                href="/pricing" 
+                href="/#pricing" 
                 className="border border-gray hover:border-primary text-foreground px-6 py-3 rounded-md text-center transition-colors font-medium"
               >
                 View Pricing

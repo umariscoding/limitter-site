@@ -6,6 +6,7 @@ import Link from "next/link";
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
 import { useAuth } from "../../context/AuthContext";
+import { purchaseOverrides, updateUserSubscription } from "../../lib/firebase";
 
 export default function Checkout() {
   const { user, loading } = useAuth();
@@ -83,7 +84,7 @@ export default function Checkout() {
       setSelectedPlan(planFromUrl);
     } else {
       // Redirect to pricing if no valid purchase type
-      router.push("/pricing");
+      router.push("/dashboard");
     }
 
     // Set user email if available
@@ -145,33 +146,13 @@ export default function Checkout() {
     try {
       if (purchaseType === "overrides") {
         console.log("🔄 Processing override purchase:", overrideQuantity);
-        
-        // Call our API to purchase overrides
-        const response = await fetch('/api/purchase-overrides', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            userId: user.uid,
-            quantity: overrideQuantity,
-            paymentData: {
-              cardNumber: cardNumber.replace(/\s/g, ''),
-              expiryDate,
-              cvv,
-              nameOnCard,
-              paymentMethod: 'card'
-            }
-          }),
+        await purchaseOverrides(user.uid, overrideQuantity, {
+          cardNumber: cardNumber.replace(/\s/g, ''),
+          expiryDate,
+          cvv,
+          nameOnCard,
+          paymentMethod: 'card'
         });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to purchase overrides');
-        }
-
-        console.log("✅ Overrides purchased successfully:", data);
         
         // Redirect to dashboard with success message
         router.push("/dashboard?purchase=overrides");
@@ -180,24 +161,14 @@ export default function Checkout() {
         console.log("🔄 Processing subscription upgrade to:", selectedPlan);
         
         // Call our API to update the subscription
-        const response = await fetch('/api/update-subscription', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            plan: selectedPlan,
-            userId: user.uid
-          }),
+        console.log("🔄 Processing subscription upgrade to:", selectedPlan, user, cardNumber, expiryDate, cvv, nameOnCard);
+        const response = await updateUserSubscription(user.uid, selectedPlan, {
+          cardNumber: cardNumber.replace(/\s/g, ''),
+          expiryDate,
+          cvv,
+          nameOnCard,
+          paymentMethod: 'card'
         });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to update subscription');
-        }
-
-        console.log("✅ Subscription updated successfully:", data);
         
         // Redirect to dashboard with success message
         router.push("/dashboard?payment=success");
@@ -360,7 +331,22 @@ export default function Checkout() {
                           min="1"
                           max="100"
                           value={overrideQuantity}
-                          onChange={(e) => setOverrideQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            if (value === '') {
+                              setOverrideQuantity('');
+                            } else {
+                              const num = parseInt(value);
+                              if (!isNaN(num)) {
+                                setOverrideQuantity(Math.min(100, Math.max(1, num)));
+                              }
+                            }
+                          }}
+                          onBlur={() => {
+                            if (overrideQuantity === '' || overrideQuantity < 1) {
+                              setOverrideQuantity(1);
+                            }
+                          }}
                           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-700"
                         />
                       </div>

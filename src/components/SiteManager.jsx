@@ -74,12 +74,17 @@ export default function SiteManager({ isOpen, onClose, editingSiteData = null })
       return false;
     }
     
-    // Basic URL validation
+    // URL normalization and validation
     try {
       const url = formData.url.startsWith('http') ? formData.url : `https://${formData.url}`;
-      new URL(url);
+      const urlObj = new URL(url);
+      // Extract domain and remove 'www.' if present
+      const domain = urlObj.hostname.replace(/^www\./, '');
+      
+      // Update the form data with normalized domain
+      formData.url = domain;
     } catch {
-      showMessage('error', 'Please enter a valid URL');
+      showMessage('error', 'Please enter a valid URL or domain');
       return false;
     }
 
@@ -223,9 +228,10 @@ export default function SiteManager({ isOpen, onClose, editingSiteData = null })
                 <input
                   type="text"
                   value={formData.url}
+                  disabled={editingSite ? true : false}
                   onChange={(e) => setFormData(prev => ({ ...prev, url: e.target.value }))}
                   placeholder="e.g., youtube.com, facebook.com"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent"
+                  className={`w-full px-3 py-2 ${editingSite ? 'cursor-not-allowed opacity-50' : ''} border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent`}
                   required
                 />
               </div>
