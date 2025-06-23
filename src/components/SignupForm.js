@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "../context/AuthContext";
-
+export const dynamic = 'force-dynamic';
 export default function SignupForm({ onSuccess, onLoginClick }) {
   const { register } = useAuth();
   const searchParams = useSearchParams();
