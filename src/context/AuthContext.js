@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import { 
   auth,
   signUp as firebaseSignUp,
@@ -16,7 +16,7 @@ import {
   ensureUserProfile,
 } from '../lib/firebase';
 
-const AuthContext = createContext();
+const AuthContext = createContext({});
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -31,7 +31,19 @@ export function AuthProvider({ children }) {
       console.log("🔄 Auth state changed:", firebaseUser ? "User logged in" : "User logged out");
       
       if (firebaseUser) {
-        await handleAuthStateChange(firebaseUser);
+        // Only set the user if email is verified
+        if (firebaseUser.emailVerified) {
+          await handleAuthStateChange(firebaseUser);
+        } else {
+          console.log("🚪 Clearing user state (logout)");
+          setUser(null);
+          setUserStats(null);
+          setBlockedSites([]);
+          setLoading(false);
+          
+          authStatePromiseResolvers.current.forEach(resolve => resolve(null));
+          authStatePromiseResolvers.current = [];
+        }
       } else {
         console.log("🚪 Clearing user state (logout)");
         setUser(null);
@@ -405,6 +417,18 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const signOut = async () => {
+    try {
+      await firebaseSignOut(auth);
+      setUser(null);
+      setUserStats(null);
+      setBlockedSites([]);
+    } catch (error) {
+      console.error("Error signing out:", error);
+      throw error;
+    }
+  };
+
   const value = {
     user,
     loading,
@@ -421,6 +445,8 @@ export function AuthProvider({ children }) {
     removeSite,
     trackTimeSpent,
     refreshUserData,
+    signOut,
+    isEmailVerified: user?.emailVerified || false,
   };
 
   return (

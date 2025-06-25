@@ -3,40 +3,52 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useAuth } from "../context/AuthContext";
+import { signInWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
+import { auth } from "../lib/firebase";
+import { toast } from "react-hot-toast";
 
 export default function LoginForm({ onSuccess, onSignupClick }) {
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
   const [error, setError] = useState("");
+
+  const handleResendVerification = async () => {
+    try {
+      // We need to sign in first to get the user object
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      await sendEmailVerification(userCredential.user);
+      toast.success("Verification email sent! Please check your inbox.");
+    } catch (error) {
+      console.error("Error resending verification:", error);
+      toast.error("Failed to resend verification email");
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
+    setNeedsVerification(false);
     setError("");
 
     try {
       console.log("📝 LoginForm: Starting login...");
-      // Use AuthContext login function
-      const result = await login(email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
       
-      if (result.success) {
-        console.log("✅ LoginForm: Login successful, auth state updated");
-        // Reset form
-        setEmail("");
-        setPassword("");
-        
-        // Call success callback immediately since login already waited for auth state
-        console.log("📝 LoginForm: Calling onSuccess callback");
-        if (onSuccess) onSuccess();
-      } else {
-        console.error("❌ LoginForm: Login failed:", result.error);
-        setError(result.error || "Failed to login. Please try again.");
+      if (!userCredential.user.emailVerified) {
+        setNeedsVerification(true);
+        toast.error("Please verify your email before logging in");
+        return;
       }
-    } catch (err) {
-      console.error("❌ LoginForm: Login error:", err);
-      setError(err.message || "Failed to login. Please try again.");
+
+      toast.success("Successfully logged in!");
+      if (onSuccess) onSuccess(userCredential.user);
+    } catch (error) {
+      console.error("Error in login:", error);
+      toast.error(error.message || "Failed to log in");
+      setError(error.message || "Failed to log in");
     } finally {
       setIsLoading(false);
     }
@@ -92,6 +104,19 @@ export default function LoginForm({ onSuccess, onSignupClick }) {
             />
           </div>
           
+          {needsVerification && (
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+              <p className="text-sm text-yellow-800">Please verify your email before logging in.</p>
+              <button
+                type="button"
+                onClick={handleResendVerification}
+                className="mt-2 text-sm text-yellow-800 underline hover:text-yellow-900"
+              >
+                Resend verification email
+              </button>
+            </div>
+          )}
+          
           <div className="flex items-center">
             <input
               id="remember-me"
@@ -108,7 +133,7 @@ export default function LoginForm({ onSuccess, onSignupClick }) {
             disabled={isLoading}
             className="w-full py-2 px-4 bg-primary text-white rounded-md hover:bg-primary-light transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50"
           >
-            {isLoading ? "Signing in..." : "Sign in"}
+            {isLoading ? "Logging in..." : "Log in"}
           </button>
         </form>
         

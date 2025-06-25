@@ -20,7 +20,7 @@ import {
 import { toast } from "react-hot-toast";
 
 export default function Dashboard() {
-  const { user, userStats, blockedSites, loading, logout, refreshUserData } = useAuth();
+  const { user, userStats, blockedSites, loading, logout, refreshUserData, isEmailVerified } = useAuth();
   const router = useRouter();
   const [subscription, setSubscription] = useState(null);
   const [dashboardData, setDashboardData] = useState(null);
@@ -60,6 +60,11 @@ export default function Dashboard() {
   useEffect(() => {
     if (!loading && !user) {
       router.push("/login");
+      return;
+    }
+
+    if (!loading && user && !isEmailVerified) {
+      router.push('/login');
       return;
     }
 
@@ -107,7 +112,7 @@ export default function Dashboard() {
         initializeDashboard();
       }
     }
-  }, [user, loading, router, isProcessingPayment]);
+  }, [user, loading, router, isEmailVerified, isProcessingPayment]);
 
   const handleSettingsClick = () => {
     setShowSettings(true);

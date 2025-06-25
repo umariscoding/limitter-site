@@ -4,7 +4,8 @@ import {
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
   signOut, 
-  onAuthStateChanged 
+  onAuthStateChanged,
+  sendEmailVerification
 } from 'firebase/auth';
 import { toast } from 'react-hot-toast';
 import { 
@@ -50,13 +51,27 @@ export const signUp = async (email, password, metadata = {}) => {
   try {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
+
+    // Send verification email immediately
+    try {
+      await sendEmailVerification(user, {
+        url: `${window.location.origin}/login?email=${encodeURIComponent(email)}`,
+        handleCodeInApp: true,
+      });
+      console.log("✉️ Verification email sent");
+    } catch (verificationError) {
+      console.error("Error sending verification email:", verificationError);
+      toast.error("Account created but couldn't send verification email. Please try signing in to resend it.");
+    }
+
     await createUserProfile(user.uid, {
       email: user.email,
       ...metadata
     });
     await createSubscription(user.uid, metadata.plan || 'free');
     await updateUserStats(user.uid, 'create', metadata.plan || 'free');
-    toast.success("User created successfully");
+    
+    toast.success("Account created! Please check your email to verify your account.");
     return { user };
   } catch (error) {
     console.error("Firebase signup error:", error);
@@ -76,6 +91,20 @@ export const signUp = async (email, password, metadata = {}) => {
 export const logIn = async (email, password) => {
   try {
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    
+    if (!userCredential.user.emailVerified) {
+      // If email isn't verified, send a new verification email
+      try {
+        await sendEmailVerification(userCredential.user, {
+          url: `${window.location.origin}/login?email=${encodeURIComponent(email)}`,
+          handleCodeInApp: true,
+        });
+        throw new Error('Please verify your email first. A new verification email has been sent.');
+      } catch (verificationError) {
+        throw new Error('Please verify your email first. If you need a new verification email, try signing in again.');
+      }
+    }
+
     toast.success("Login successful");
     return { user: userCredential.user };
   } catch (error) {

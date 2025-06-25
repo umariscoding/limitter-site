@@ -3,6 +3,10 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "../context/AuthContext";
+import { createUserWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
+import { auth } from "../lib/firebase";
+import { toast } from "react-hot-toast";
+
 export const dynamic = 'force-dynamic';
 export default function SignupForm({ onSuccess, onLoginClick }) {
   const { register } = useAuth();
@@ -27,7 +31,7 @@ export default function SignupForm({ onSuccess, onLoginClick }) {
     e.preventDefault();
     
     if (password !== confirmPassword) {
-      setError("Passwords don't match");
+      toast.error("Passwords do not match");
       return;
     }
     
@@ -35,23 +39,16 @@ export default function SignupForm({ onSuccess, onLoginClick }) {
     setError("");
 
     try {
-      // Use AuthContext register function
-      const result = await register(name, email, password, selectedPlan);
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       
-      if (result.success) {
-        // Reset form
-        setName("");
-        setEmail("");
-        setPassword("");
-        setConfirmPassword("");
-        
-        // Call success callback
-        if (onSuccess) onSuccess();
-      } else {
-        setError(result.error || "Failed to create account. Please try again.");
-      }
-    } catch (err) {
-      setError(err.message || "Failed to create account. Please try again.");
+      // Send verification email
+      await sendEmailVerification(userCredential.user);
+      
+      toast.success("Account created! Please check your email for verification link.");
+      if (onSuccess) onSuccess(userCredential.user);
+    } catch (error) {
+      console.error("Error in signup:", error);
+      toast.error(error.message || "Failed to create account");
     } finally {
       setIsLoading(false);
     }
