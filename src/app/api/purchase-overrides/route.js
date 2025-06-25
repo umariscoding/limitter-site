@@ -12,7 +12,6 @@ export async function POST(request) {
       );
     }
 
-    // Validate quantity
     if (quantity < 1 || quantity > 100) {
       return NextResponse.json(
         { error: 'Invalid quantity. Must be between 1 and 100 overrides.' },
@@ -20,13 +19,7 @@ export async function POST(request) {
       );
     }
 
-    console.log(`🔄 Processing override purchase for user ${userId}: ${quantity} overrides`);
-
-    // Process the override purchase
     const result = await purchaseOverrides(userId, quantity, paymentData);
-
-    console.log(`✅ Override purchase completed:`, result);
-
     return NextResponse.json({
       success: true,
       purchase: {

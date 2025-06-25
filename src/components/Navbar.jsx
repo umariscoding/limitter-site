@@ -108,8 +108,16 @@ export default function Navbar({ onNavigate }) {
           onClick={() => handleNavigation('home')} 
           className="flex items-center gap-2 cursor-pointer"
         >
-          <div className="w-8 h-8 rounded-md overflow-hidden gradient-bg flex items-center justify-center text-white font-bold text-lg">L</div>
-          <span className="text-xl font-bold gradient-text">Limiter</span>
+          <div className="w-8 h-8 relative flex flex-col items-center justify-center">
+            <Image
+              src="/icon16.png"
+              alt="Limitter Logo"
+              fill
+              className="object-contain"
+              priority
+            />
+          </div>
+          <span className="text-xl font-bold text-white">Limitter</span>
         </div>
 
         {/* Desktop menu */}

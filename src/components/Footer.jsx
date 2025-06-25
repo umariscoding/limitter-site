@@ -8,7 +8,7 @@ export default function Footer() {
           <div>
             <div className="flex items-center gap-2 mb-4">
               <div className="w-8 h-8 rounded-md overflow-hidden gradient-bg flex items-center justify-center text-white font-bold text-lg">L</div>
-              <span className="text-xl font-bold gradient-text">Limiter</span>
+              <span className="text-xl font-bold gradient-text">Limitter</span>
             </div>
             <p className="text-gray-dark dark:text-gray mb-4">
               Stay focused with smart website blocking and time management.
@@ -29,7 +29,7 @@ export default function Footer() {
             <ul className="space-y-2">
               <li className="text-gray-dark dark:text-gray">
                 <span className="font-medium">Email:</span><br />
-                <a href="mailto:support@limiter.com" className="hover:text-primary">support@limiter.com</a>
+                <a href="mailto:support@Limitter.com" className="hover:text-primary">support@Limitter.com</a>
               </li>
               <li className="text-gray-dark dark:text-gray">
                 <span className="font-medium">Support Hours:</span><br />
@@ -40,7 +40,7 @@ export default function Footer() {
         </div>
         
         <div className="border-t border-gray pt-8 mt-8 text-center text-gray-dark dark:text-gray">
-          <p>&copy; {new Date().getFullYear()} Limiter. All rights reserved.</p>
+          <p>&copy; {new Date().getFullYear()} Limitter. All rights reserved.</p>
         </div>
       </div>
     </footer>

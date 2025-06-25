@@ -3,10 +3,10 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
-  --primary: #4338ca;
-  --primary-light: #6366f1;
+  --primary: #058052;
+  --primary-light: #069963;
   --secondary: #10b981;
-  --accent: #8b5cf6;
+  --accent: #058052;
   --gray-light: #f3f4f6;
   --gray: #9ca3af;
   --gray-dark: #374151;
@@ -43,7 +43,7 @@ body {
 }
 
 .gradient-text {
-  background: linear-gradient(to right, var(--primary-light), var(--accent));
+  background: linear-gradient(to right, var(--primary), var(--accent));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }

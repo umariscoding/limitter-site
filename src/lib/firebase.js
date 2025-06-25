@@ -130,10 +130,8 @@ export const createUserProfile = async (userId, userData) => {
       updated_at: serverTimestamp(),
     };
 
-    // Create user profile
     await setDoc(doc(db, 'users', userId), userDoc);
 
-    // Create initial subscription document
     const subscriptionDoc = {
       user_id: userId,
       plan: userData.plan || 'free',
@@ -161,7 +159,6 @@ export const getUserProfile = async (userId) => {
 
     const userData = userDoc.data();
     
-    // Initialize money_spent if it doesn't exist
     if (userData.total_spent === undefined) {
       await initializeUserProfile(userId, userData);
       return await getUserProfile(userId);
@@ -237,7 +234,6 @@ export const updateUserBlockedSitesCount = async (userId, change) => {
 
 export const addBlockedSite = async (userId, siteData) => {
   try {
-    console.log(auth)
     const normalizedDomain = normalizeDomain(siteData.url);
     const documentId = `${userId}_${normalizedDomain}`;
     
@@ -436,15 +432,11 @@ export const createSubscription = async (userId, plan) => {
 
 export const updateUserSubscription = async (userId, plan, paymentData) => {
   try {
-    console.log("🔍 Getting user profile for:", userId);
     let currentUser = await getUserProfile(userId);
-    console.log("📊 Current user data:", currentUser);
 
     if (!currentUser) {
-      console.log("⚠️ User not found, creating profile...");
       await createUserProfile(userId, { plan: 'free' });
       currentUser = await getUserProfile(userId);
-      console.log("✅ Created new user profile:", currentUser);
     }
 
     if (!currentUser.plan) {
@@ -457,12 +449,9 @@ export const updateUserSubscription = async (userId, plan, paymentData) => {
     }
     
     const previousPlan = currentUser.plan;
-    console.log("📊 Previous plan:", previousPlan);
     
     const existingSubscription = await getUserSubscription(userId);
-    console.log("📊 Existing subscription:", existingSubscription);
     
-    // Calculate plan price
     let planPrice = 0;
     if (plan === 'pro') {
       planPrice = 4.99;
@@ -472,7 +461,6 @@ export const updateUserSubscription = async (userId, plan, paymentData) => {
 
     
     
-    // Create transaction if it's a paid plan
     let transaction = null;
     if (planPrice > 0) {
       try {
@@ -506,14 +494,11 @@ export const updateUserSubscription = async (userId, plan, paymentData) => {
         { plan: plan },
         'increment'
       );
-        console.log("📝 Creating transaction with data:", transactionData);
         if (previousPlan !== plan) {
-          console.log("🔄 Plan changed, deleting all sites...");
           await deleteAllUserSites(userId, `Plan changed from ${previousPlan} to ${plan}`);
         }
         
         transaction = await createTransaction(userId, transactionData);
-        console.log("✅ Transaction created:", transaction.id);
       } catch (transactionError) {
         console.error('❌ Error creating transaction:', transactionError);
         throw transactionError;
@@ -521,7 +506,6 @@ export const updateUserSubscription = async (userId, plan, paymentData) => {
     }
 
     if (existingSubscription) {
-      console.log("📝 Updating existing subscription");
       const updateData = {
         plan: plan,
         status: 'active',
@@ -565,7 +549,6 @@ export const updateUserSubscription = async (userId, plan, paymentData) => {
         }
       });
       
-      console.log("✅ Subscription updated successfully");
       return { 
         id: userId, 
         ...existingSubscription, 
@@ -574,7 +557,6 @@ export const updateUserSubscription = async (userId, plan, paymentData) => {
       };
     }
 
-    console.log("📝 Creating new subscription");
     const newSubscription = await createSubscription(userId, plan);
     
     await updateDoc(doc(db, 'users', userId), {
@@ -612,7 +594,6 @@ export const updateUserSubscription = async (userId, plan, paymentData) => {
       }
     });
     
-    console.log("✅ New subscription created successfully");
     return {
       ...newSubscription,
       transaction: transaction ? { id: transaction.id } : null
@@ -699,7 +680,6 @@ export const purchaseOverrides = async (userId, quantity, paymentData) => {
   try {
     const pricePerOverride = 1.99;
     const totalPrice = quantity * pricePerOverride;
-    console.log("Auth", auth)
     
     await new Promise(resolve => setTimeout(resolve, 1500));
     
@@ -707,7 +687,6 @@ export const purchaseOverrides = async (userId, quantity, paymentData) => {
     const newOverrideBalance = (overrideStats.overrides || 0) + quantity;
     const newTotalPurchased = (overrideStats.total_overrides_purchased || 0) + quantity;
     
-    // Create transaction first
     const transaction = await createTransaction(userId, {
       type: 'override_purchase',
       amount: totalPrice,
@@ -720,16 +699,13 @@ export const purchaseOverrides = async (userId, quantity, paymentData) => {
       }
     });
 
-    // Update override stats
     await updateDoc(doc(db, 'user_overrides', userId), {
       overrides: newOverrideBalance,
       total_overrides_purchased: newTotalPurchased,
       total_spent: (overrideStats.total_spent || 0) + totalPrice,
       updated_at: serverTimestamp()
     });
-    
-    console.log(`✅ Overrides purchased successfully: ${quantity} overrides`);
-    
+        
     return {
       success: true,
       transactionId: transaction.transaction_id,
@@ -822,7 +798,7 @@ export const getDashboardData = async (userId) => {
       getUserProfile(userId),
       getBlockedSites(userId),
       getUserSubscription(userId),
-      getTransactions(userId, 5) // Get last 5 transactions for dashboard preview
+      getTransactions(userId, 5) 
     ]);
     
     const totalSites = blockedSites.length;
@@ -843,7 +819,6 @@ export const getDashboardData = async (userId) => {
       lastAccessed: site.last_accessed
     }));
 
-    // Calculate transaction summary
     const transactionSummary = {
       recent: transactions.map(t => ({
         id: t.id,
@@ -1063,7 +1038,6 @@ export const resetDailySiteTimes = async (userId) => {
     
     if (batch.length > 0) {
       await Promise.all(batch);
-      console.log(`🌅 Reset ${batch.length} sites for new day`);
     }
     
     return batch.length;
@@ -1085,7 +1059,7 @@ export const getUserAnalytics = async (userId) => {
     const [userProfile, subscription, transactions] = await Promise.all([
       getUserProfile(userId),
       getUserSubscription(userId),
-      getTransactions(userId, 10)  // Get last 50 transactions for analysis
+      getTransactions(userId, 10) 
     ]);
     
     const plan = subscription?.plan || userProfile?.plan || 'free';
@@ -1101,13 +1075,11 @@ export const getUserAnalytics = async (userId) => {
       average_transaction: 0
     };
 
-    // Group transactions by month for spending history
     transactions.forEach(txn => {
       if (txn.status === 'completed') {
         transactionStats.total_spent += txn.amount;
         transactionStats.by_type[txn.type] = (transactionStats.by_type[txn.type] || 0) + 1;
 
-        // Add to spending history by month
         const month = new Date(txn.created_at.seconds * 1000).toISOString().slice(0, 7);
         transactionStats.spending_history[month] = (transactionStats.spending_history[month] || 0) + txn.amount;
       }
@@ -1453,7 +1425,6 @@ export const getAllUsers = async (lastDoc = null, limit = 10) => {
     
     const lastVisible = usersSnapshot.docs[usersSnapshot.docs.length - 1];
     
-    console.log(`✅ Admin: Found ${users.length} users`);
     return { users, lastDoc: lastVisible };
   } catch (error) {
     console.error("❌ Admin error fetching users:", error);
@@ -1488,7 +1459,6 @@ export const getUserDetails = async (userId) => {
       }
     };
     
-    console.log("✅ Admin: User details compiled");
     return userDetails;
   } catch (error) {
     console.error("❌ Admin error fetching user details:", error);
@@ -1514,9 +1484,7 @@ export const adminUpdateUserProfile = async (userId, updateData) => {
 };
 
 export const adminGrantOverrides = async (userId, quantity, reason = "Admin granted") => {
-  try {
-    console.log(`🎁 Admin: Granting ${quantity} overrides to user ${userId}`);
-    
+  try {    
     const overrideStatsRef = doc(db, 'user_overrides', userId);
     const overrideStatsDoc = await getDoc(overrideStatsRef);
     
@@ -1562,7 +1530,6 @@ export const adminGrantOverrides = async (userId, quantity, reason = "Admin gran
       }
     });
     
-    console.log("✅ Admin: Overrides granted successfully with activity logged");
     return await getUserOverrideStats(userId);
   } catch (error) {
     console.error("❌ Admin error granting overrides:", error);
@@ -1575,9 +1542,7 @@ export const adminChangeUserPlan = async (userId, newPlan, reason = "Admin chang
     const currentUser = await getUserProfile(userId);
     const previousPlan = currentUser?.plan || 'free';
     
-    // Delete all sites when plan changes
     if (previousPlan !== newPlan) {
-      console.log("🔄 Plan changed by admin, deleting all sites...");
       await deleteAllUserSites(userId, `Admin changed plan from ${previousPlan} to ${newPlan}`);
     }
     
@@ -1640,7 +1605,6 @@ export const adminChangeUserPlan = async (userId, newPlan, reason = "Admin chang
       }
     });
     
-    console.log("✅ Admin: User plan changed successfully with benefits granted and activity logged");
     return await getUserSubscription(userId);
   } catch (error) {
     console.error("❌ Error in adminChangeUserPlan:", error);
@@ -1650,7 +1614,6 @@ export const adminChangeUserPlan = async (userId, newPlan, reason = "Admin chang
 
 export const grantPlanBenefits = async (userId, newPlan, previousPlan = 'free', reason = "Plan upgrade benefits") => {
   try {
-    console.log(`🎁 Admin: Granting ${newPlan} plan benefits to user ${userId}`);
     
     const planBenefits = {
       free: {
@@ -2857,7 +2820,6 @@ export const initializeUserProfile = async (userId, userData) => {
 
 export const deleteAllUserSites = async (userId, reason = "Plan change") => {
   try {
-    console.log(`🗑️ Deleting all sites for user ${userId}`);
     
     // Get all sites for the user
     const sitesRef = collection(db, 'blocked_sites');
@@ -2903,7 +2865,6 @@ export const deleteAllUserSites = async (userId, reason = "Plan change") => {
       updated_at: serverTimestamp()
     });
     
-    console.log(`✅ Successfully deleted ${sitesSnapshot.size} sites for user ${userId}`);
     return { success: true, deletedCount: sitesSnapshot.size };
   } catch (error) {
     console.error("❌ Error deleting all user sites:", error);

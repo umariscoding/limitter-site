@@ -10,8 +10,14 @@ import Analytics from "../../components/Analytics";
 import SiteManager from "../../components/SiteManager";
 import BlockedSitesModal from "../../components/BlockedSitesModal";
 import { useAuth } from "../../context/AuthContext";
-import { getUserSubscription, getDashboardData, getUserOverrideStats } from "../../lib/firebase";
-import UserTransactions from '@/components/UserTransactions';
+import { 
+  getUserSubscription, 
+  getDashboardData, 
+  getUserOverrideStats,
+  updateUserSubscription,
+  purchaseOverrides 
+} from "../../lib/firebase";
+import { toast } from "react-hot-toast";
 
 export default function Dashboard() {
   const { user, userStats, blockedSites, loading, logout, refreshUserData } = useAuth();
@@ -27,24 +33,18 @@ export default function Dashboard() {
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [overrideStats, setOverrideStats] = useState(null);
   const [overridePurchaseSuccess, setOverridePurchaseSuccess] = useState(false);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
-  // Define fetchDashboardData outside useEffect
   const fetchDashboardData = async () => {
     if (user?.uid) {
       try {
-        console.log("📊 Loading dashboard data...");
         setIsLoading(true);
         
-        // Fetch enhanced dashboard data, subscription, and override stats in parallel
         const [dashData, subData, overrideData] = await Promise.all([
           getDashboardData(user.uid),
           getUserSubscription(user.uid),
           getUserOverrideStats(user.uid)
         ]);
-        
-        console.log("📈 Dashboard data loaded:", dashData);
-        console.log("🎯 Override stats loaded:", overrideData);
-        
         setDashboardData(dashData);
         setSubscription(subData);
         setOverrideStats(overrideData);
@@ -58,72 +58,56 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    // Check for payment/purchase success from URL parameters
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      const paymentParam = urlParams.get("payment");
-      const purchaseParam = urlParams.get("purchase");
-      
-      if (paymentParam === "success") {
-        setPaymentSuccess(true);
-        // Clear the URL parameter after showing the message
-        const url = new URL(window.location);
-        url.searchParams.delete("payment");
-        window.history.replaceState({}, "", url);
-        
-        // Refresh user data to get updated subscription
-        if (refreshUserData) {
-          refreshUserData();
-        }
-        
-        // Also refresh dashboard data to show updated subscription info
-        if (user?.uid) {
-          fetchDashboardData();
-        }
-        
-        // Hide the message after 5 seconds
-        setTimeout(() => setPaymentSuccess(false), 5000);
-      }
-      
-      if (purchaseParam === "overrides") {
-        setOverridePurchaseSuccess(true);
-        // Clear the URL parameter after showing the message
-        const url = new URL(window.location);
-        url.searchParams.delete("purchase");
-        window.history.replaceState({}, "", url);
-        
-        // Refresh override stats
-        if (user?.uid) {
-          const fetchUpdatedOverrides = async () => {
-            try {
-              const overrideData = await getUserOverrideStats(user.uid);
-              setOverrideStats(overrideData);
-            } catch (error) {
-              console.error("Error refreshing override data:", error);
-            }
-          };
-          fetchUpdatedOverrides();
-        }
-        
-        // Hide the message after 5 seconds
-        setTimeout(() => setOverridePurchaseSuccess(false), 5000);
-      }
-    }
-
-    // Only redirect if we're not loading and definitely have no user
     if (!loading && !user) {
-      console.log("No user found, redirecting to login");
       router.push("/login");
       return;
     }
 
-    // Fetch all dashboard data if user exists
-    if (user) {
-      fetchDashboardData();
-    } else if (!loading) {
-      setIsLoading(false);
+    const processPayment = async (sessionId) => {
+      if (isProcessingPayment) return; 
+      setIsProcessingPayment(true);
+      setIsLoading(true);
+      
+      try {
+        const url = new URL(window.location);
+        url.searchParams.delete("payment");
+        url.searchParams.delete("session_id");
+        window.history.replaceState({}, "", url);
+        
+        await handlePaymentSuccess(sessionId);
+        
+        await fetchDashboardData();
+        
+      } catch (error) {
+        console.error("❌ Error processing payment:", error);
+        toast.error("Failed to process payment. Please try again.");
+      } finally {
+        setIsLoading(false);
+        setIsProcessingPayment(false);
+      }
+    };
+
+    const initializeDashboard = async () => {
+      if (user) {
+        console.log("📊 Initializing dashboard...");
+        setIsLoading(true);
+        await fetchDashboardData();
+        setIsLoading(false);
+      }
+    };
+
+    if (typeof window !== 'undefined' && user) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const paymentParam = urlParams.get("payment");
+      const sessionId = urlParams.get("session_id");
+      
+      if (paymentParam === "success" && sessionId && !isProcessingPayment) {
+        processPayment(sessionId);
+      } else if (!isProcessingPayment) {
+        initializeDashboard();
+      }
     }
-  }, [user, loading, router]);
+  }, [user, loading, router, isProcessingPayment]);
 
   const handleSettingsClick = () => {
     setShowSettings(true);
@@ -164,7 +148,57 @@ export default function Dashboard() {
     setShowSiteManager(true);
   };
 
-  // Show loading state
+  const handlePaymentSuccess = async (sessionId) => {
+    if (!user) return;
+
+    try {
+      const response = await fetch('/api/get-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch session details');
+      }
+
+      const { session } = await response.json();
+      
+      const { paymentType, plan, quantity } = session.metadata;
+      const paymentMethod = session.payment_intent?.payment_method;
+      const paymentData = {
+        cardNumber: paymentMethod?.card?.last4 || '',
+        expiryDate: paymentMethod?.card ? 
+          `${paymentMethod.card.exp_month}/${paymentMethod.card.exp_year}` : '',
+        nameOnCard: session.customer_details?.name || ''
+      };
+      
+      if (paymentType === 'plan') {
+        await updateUserSubscription(user.uid, plan, paymentData);
+        setPaymentSuccess(true);
+        toast.success(`Successfully upgraded to ${plan} plan!`);
+      } else if (paymentType === 'overrides') {
+        const overrideQty = parseInt(quantity) || 1;
+        await purchaseOverrides(user.uid, overrideQty, paymentData);
+        setOverridePurchaseSuccess(true);
+        toast.success(`Successfully purchased ${overrideQty} overrides!`);
+      }
+      
+      if (refreshUserData) {
+        await refreshUserData();
+      }
+      
+      setTimeout(() => {
+        setPaymentSuccess(false);
+        setOverridePurchaseSuccess(false);
+      }, 5000);
+    } catch (error) {
+      console.error("❌ Error processing payment success:", error);
+      toast.error("Failed to process payment. Please contact support.");
+      throw error; 
+    }
+  };
+
   if (loading || (isLoading && user)) {
     return (
       <>
@@ -178,9 +212,7 @@ export default function Dashboard() {
         <Footer />
       </>
     );
-  }
-
-  // If no user after loading, show nothing (redirect will happen)
+    }
   if (!user) {
     return null;
   }
@@ -195,36 +227,6 @@ export default function Dashboard() {
     return badges[plan] || badges.free;
   };
 
-  const getCurrentMonthStats = () => {
-    if (!overrideStats?.monthly_stats) return { freeOverridesRemaining: 0 };
-    
-    const now = new Date();
-    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const monthlyStats = overrideStats.monthly_stats[currentMonth];
-    
-    if (!monthlyStats) return { freeOverridesRemaining: 0 };
-    
-    // Calculate free overrides remaining based on plan
-    const plan = subscription?.plan || 'free';
-    let freeOverridesLimit = 0;
-    
-    switch (plan) {
-      case 'pro':
-        freeOverridesLimit = 15;
-        break;
-      case 'elite':
-        freeOverridesLimit = 200; // Unlimited
-        break;
-      default:
-        freeOverridesLimit = 0; // Free plan gets 0 free overrides
-    }
-    
-    const freeOverridesUsed = monthlyStats.free_overrides_used || 0;
-    const freeOverridesRemaining = Math.max(0, freeOverridesLimit - freeOverridesUsed);
-    
-    return { freeOverridesRemaining };
-  };
-
   return (
     <>
       <Navbar />
@@ -235,7 +237,7 @@ export default function Dashboard() {
           <div className="flex justify-between items-center mb-8">
             <div>
               <h1 className="text-3xl font-bold mb-2">Welcome back{user?.profile_name ? `, ${user.profile_name}` : ''}!</h1>
-              <p className="text-gray-600 dark:text-gray-400">Manage your Limiter settings and view your progress</p>
+              <p className="text-gray-600 dark:text-gray-400">Manage your Limitter settings and view your progress</p>
             </div>
           </div>
 
@@ -419,7 +421,6 @@ export default function Dashboard() {
               </div>
             </div>
             
-            {/* Main Content Area - Conditional rendering */}
             <div className="lg:col-span-2 space-y-6">
               {showSettings ? (
                 <Settings onBack={handleBackFromSettings} />
@@ -434,7 +435,6 @@ export default function Dashboard() {
                 />
               ) : (
                 <>
-                  {/* Subscription Card */}
                   <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
                     <div className="p-6">
                       <h2 className="text-lg font-semibold mb-4">Your Subscription</h2>
@@ -541,7 +541,6 @@ export default function Dashboard() {
                     </div>
                   </div>
                   
-                  {/* Override Overrides Section */}
                   {overrideStats && (
                     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
                       <div className="p-6">
@@ -605,9 +604,6 @@ export default function Dashboard() {
                     </div>
                   )}
 
-
-
-                  {/* Quick Actions */}
                   <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
                     <div className="p-6">
                       <h2 className="text-lg font-semibold mb-4">Quick Actions</h2>
@@ -639,10 +635,7 @@ export default function Dashboard() {
                             Manage your tracking sites ({dashboardData?.sites?.total ?? blockedSites.length})
                           </p>
                         </button>
-                        
-
-
-
+                      
                         <button 
                           onClick={handleSettingsClick}
                           className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
@@ -690,7 +683,6 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  {/* Blocked Sites Preview */}
                   <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden">
                     <div className="p-6">
                       <div className="flex items-center justify-between mb-4">
@@ -790,14 +782,12 @@ export default function Dashboard() {
         </div>
       </div>
       
-      {/* Site Manager Modal */}
       <SiteManager 
         isOpen={showSiteManager}
         onClose={handleCloseSiteManager}
         editingSiteData={editingSiteData}
       />
       
-      {/* Tracking Sites Modal */}
       <BlockedSitesModal 
         isOpen={showBlockedSitesModal}
         onClose={handleCloseBlockedSitesModal}
