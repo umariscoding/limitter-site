@@ -38,8 +38,8 @@ export default function Login() {
         // Reset form
         setEmail("");
         setPassword("");
-        // Redirect to dashboard
-        router.push("/dashboard");
+        // Use window.location for a full page refresh after login
+        window.location.href = "/dashboard";
       } else {
         console.error("❌ Login page: Login failed:", result.error);
         setError(result.error || "Failed to login. Please try again.");
@@ -112,9 +112,6 @@ export default function Login() {
                   <label htmlFor="password" className="block text-sm font-medium">
                     Password
                   </label>
-                  <Link href="/forgot-password" className="text-xs text-primary hover:underline">
-                    Forgot password?
-                  </Link>
                 </div>
                 <input
                   id="password"

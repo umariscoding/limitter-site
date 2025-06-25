@@ -1,5 +1,5 @@
 import Link from "next/link";
-
+import Image from "next/image";
 export default function Footer() {
   return (
     <footer className="bg-gray-light dark:bg-gray-dark/10 py-12 mt-12">
@@ -7,8 +7,8 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <div>
             <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-md overflow-hidden gradient-bg flex items-center justify-center text-white font-bold text-lg">L</div>
-              <span className="text-xl font-bold gradient-text">Limitter</span>
+              <Image src="/icon16.png" alt="Limitter" width={32} height={32} />
+              <span className="text-xl font-bold text-white">Limitter</span>
             </div>
             <p className="text-gray-dark dark:text-gray mb-4">
               Stay focused with smart website blocking and time management.

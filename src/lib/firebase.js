@@ -104,7 +104,6 @@ export const logIn = async (email, password) => {
         throw new Error('Please verify your email first. If you need a new verification email, try signing in again.');
       }
     }
-
     toast.success("Login successful");
     return { user: userCredential.user };
   } catch (error) {

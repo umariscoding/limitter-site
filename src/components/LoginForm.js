@@ -6,6 +6,7 @@ import { useAuth } from "../context/AuthContext";
 import { signInWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
 import { auth } from "../lib/firebase";
 import { toast } from "react-hot-toast";
+import { useRouter } from "next/navigation";
 
 export default function LoginForm({ onSuccess, onSignupClick }) {
   const { login } = useAuth();
@@ -14,7 +15,7 @@ export default function LoginForm({ onSuccess, onSignupClick }) {
   const [isLoading, setIsLoading] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false);
   const [error, setError] = useState("");
-
+  const router = useRouter();
   const handleResendVerification = async () => {
     try {
       // We need to sign in first to get the user object
@@ -44,6 +45,7 @@ export default function LoginForm({ onSuccess, onSignupClick }) {
       }
 
       toast.success("Successfully logged in!");
+      router.push("/dashboard");
       if (onSuccess) onSuccess(userCredential.user);
     } catch (error) {
       console.error("Error in login:", error);
@@ -89,9 +91,6 @@ export default function LoginForm({ onSuccess, onSignupClick }) {
               <label htmlFor="password" className="block text-sm font-medium">
                 Password
               </label>
-              <Link href="/forgot-password" className="text-xs text-primary hover:underline">
-                Forgot password?
-              </Link>
             </div>
             <input
               id="password"

@@ -15,7 +15,7 @@ import {
   removeBlockedSite,
   ensureUserProfile,
 } from '../lib/firebase';
-
+import { useRouter } from 'next/navigation';
 const AuthContext = createContext({});
 
 export function AuthProvider({ children }) {
@@ -24,7 +24,7 @@ export function AuthProvider({ children }) {
   const [userStats, setUserStats] = useState(null);
   const [blockedSites, setBlockedSites] = useState([]);
   const authStatePromiseResolvers = useRef([]);
-
+  const router = useRouter();
   useEffect(() => {
     // Listen for auth changes
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -208,7 +208,7 @@ export function AuthProvider({ children }) {
       } catch (authError) {
         console.warn("⚠️ Auth state change timeout, but login may have succeeded:", authError.message);
       }
-      
+      router.push("/dashboard");
       return { success: true };
     } catch (error) {
       console.error("❌ Login error:", error);
