@@ -245,10 +245,6 @@ function CheckoutContent() {
                   </svg>
                   Secure payment powered by Stripe
                 </div>
-                <p>
-                  By completing your purchase, you agree to our{" "}
-                  <Link href="/terms" className="text-primary hover:underline">Terms of Service</Link>
-                </p>
               </div>
             </div>
           </div>

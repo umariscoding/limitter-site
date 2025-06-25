@@ -117,7 +117,7 @@ export default function SignupForm({ onSuccess, onLoginClick }) {
             />
           </div>
           
-          <div>
+          <div className="mb-6">
             <label htmlFor="confirm-password" className="block text-sm font-medium mb-1">
               Confirm password
             </label>
@@ -131,7 +131,7 @@ export default function SignupForm({ onSuccess, onLoginClick }) {
               placeholder="••••••••"
             />
           </div>
-
+          
           <div>
             <label className="block text-sm font-medium mb-2">
               Select your plan
@@ -171,25 +171,6 @@ export default function SignupForm({ onSuccess, onLoginClick }) {
                 <div className="text-xs text-gray-dark dark:text-gray">$9.99/mo</div>
               </div>
             </div>
-          </div>
-          
-          <div className="flex items-start">
-            <input
-              id="terms"
-              type="checkbox"
-              required
-              className="h-4 w-4 mt-1 text-primary border-gray-light rounded"
-            />
-            <label htmlFor="terms" className="ml-2 block text-sm text-gray-dark dark:text-gray">
-              I agree to the{" "}
-              <a href="#terms" className="text-primary hover:underline">
-                Terms of Service
-              </a>{" "}
-              and{" "}
-              <a href="#privacy" className="text-primary hover:underline">
-                Privacy Policy
-              </a>
-            </label>
           </div>
           
           <button
