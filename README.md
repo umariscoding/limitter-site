@@ -1,4 +1,4 @@
-# Limiter Site
+# Limitter Site
 
 A Next.js application for website blocking and time management, built with Firebase for authentication and data storage.
 

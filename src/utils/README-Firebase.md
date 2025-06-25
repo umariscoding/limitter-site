@@ -1,19 +1,19 @@
-# Firebase Setup for Limiter
+# Firebase Setup for Limitter
 
-This document provides instructions on how to set up Firebase for the Limiter project.
+This document provides instructions on how to set up Firebase for the Limitter project.
 
 ## Step 1: Create a Firebase Project
 
 1. Go to the [Firebase Console](https://console.firebase.google.com/)
 2. Click "Add project" and follow the steps to create a new project
-3. Give your project a name (e.g., "Limiter")
+3. Give your project a name (e.g., "Limitter")
 4. Enable Google Analytics if desired (optional)
 5. Click "Create project"
 
 ## Step 2: Add a Web App to Your Firebase Project
 
 1. On the Firebase project dashboard, click the web icon (</>) to add a web app
-2. Register your app with a nickname (e.g., "Limiter Web")
+2. Register your app with a nickname (e.g., "Limitter Web")
 3. Check the box for "Also set up Firebase Hosting" if you plan to use it
 4. Click "Register app"
 5. Firebase will provide your app's configuration object - save this information for later

@@ -69,7 +69,7 @@ export default function Settings({ onBack }) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `limiter-data-${new Date().toISOString().split('T')[0]}.json`;
+      a.download = `Limitter-data-${new Date().toISOString().split('T')[0]}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -103,7 +103,7 @@ export default function Settings({ onBack }) {
             <h2 className="text-lg font-semibold">Settings</h2>
           </div>
           <div className="text-sm text-gray-500 dark:text-gray-400">
-            Customize your Limiter experience
+            Customize your Limitter experience
           </div>
         </div>
 

@@ -66,7 +66,7 @@ export default function Home() {
                   <span className="gradient-text">Limit distractions,</span> boost productivity
                 </h1>
                 <p className="text-lg mb-8 text-gray-dark dark:text-gray">
-                  Limiter helps you stay focused by blocking distracting websites with smart timers that pause when you switch tabs and resume when you return.
+                  Limitter helps you stay focused by blocking distracting websites with smart timers that pause when you switch tabs and resume when you return.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-4">
                   {user ? (
@@ -92,29 +92,10 @@ export default function Home() {
                   </button>
                 </div>
               </div>
-              <div className="relative h-[400px]">
+              <div className="relative h-auto">
                 <div className="absolute inset-0 bg-gradient-to-r from-primary/20 to-accent/20 rounded-xl"></div>
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-full max-w-md bg-white dark:bg-gray-dark rounded-lg shadow-xl overflow-hidden">
-                    <div className="p-4 border-b border-gray-light dark:border-gray-dark">
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-md overflow-hidden gradient-bg flex items-center justify-center text-white font-bold text-xs">L</div>
-                          <span className="text-sm font-bold text-foreground">Limiter Active</span>
-                        </div>
-                        <span className="text-xs text-gray-dark dark:text-gray px-2 py-1 bg-gray-light dark:bg-gray-dark/30 rounded">00:30</span>
-                      </div>
-                    </div>
-                    <div className="p-6">
-                      <h3 className="text-lg font-semibold mb-2">YouTube has been blocked</h3>
-                      <p className="text-sm text-gray-dark dark:text-gray mb-4">
-                        You&apos;ve reached your time limit for this website. Time to focus on what matters!
-                      </p>
-                      <div className="flex justify-end">
-                        <button className="text-sm text-primary">Learn more about Premium</button>
-                      </div>
-                    </div>
-                  </div>
+                  <Image className="rounded-xl" src="/Theme1.png" alt="Limitter Hero" width={300} height={300} />
                 </div>
               </div>
             </div>
@@ -127,7 +108,7 @@ export default function Home() {
             <div className="text-center mb-16">
               <h2 className="text-3xl font-bold mb-4">Smart features to boost your productivity</h2>
               <p className="text-gray-dark dark:text-gray max-w-2xl mx-auto">
-                Limiter comes packed with powerful features designed to help you stay focused and make the most of your time.
+                Limitter comes packed with powerful features designed to help you stay focused and make the most of your time.
               </p>
             </div>
             
@@ -335,7 +316,7 @@ export default function Home() {
             <div className="text-center mb-16">
               <h2 className="text-3xl font-bold mb-4">What our users say</h2>
               <p className="text-gray-dark dark:text-gray max-w-2xl mx-auto">
-                Thousands of users rely on Limiter to stay focused and productive.
+                Thousands of users rely on Limitter to stay focused and productive.
               </p>
             </div>
             
@@ -351,7 +332,7 @@ export default function Home() {
                   </div>
                 </div>
                 <p className="text-gray-dark dark:text-gray">
-                  Limiter has transformed how I work. I used to waste hours on social media, but now I&apos;m able to stay focused and get more done.
+                  Limitter has transformed how I work. I used to waste hours on social media, but now I&apos;m able to stay focused and get more done.
                 </p>
                 <div className="mt-4 flex">
                   {[1, 2, 3, 4, 5].map((star) => (
@@ -395,7 +376,7 @@ export default function Home() {
                   </div>
                 </div>
                 <p className="text-gray-dark dark:text-gray">
-                  As a student, it&apos;s so easy to get distracted online. Limiter helps me stay on track with my studies and avoid procrastination.
+                  As a student, it&apos;s so easy to get distracted online. Limitter helps me stay on track with my studies and avoid procrastination.
                 </p>
                 <div className="mt-4 flex">
                   {[1, 2, 3, 4, 5].map((star, i) => (
@@ -415,7 +396,7 @@ export default function Home() {
             <div className="bg-background rounded-xl p-8 md:p-12 shadow-lg border border-gray-light dark:border-gray-dark/30 text-center">
               <h2 className="text-3xl font-bold mb-4">Ready to boost your productivity?</h2>
               <p className="text-gray-dark dark:text-gray max-w-xl mx-auto mb-8">
-                Join thousands of users who have improved their focus and productivity with Limiter.
+                Join thousands of users who have improved their focus and productivity with Limitter.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <button 

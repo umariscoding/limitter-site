@@ -62,7 +62,7 @@ export default function SignupForm({ onSuccess, onLoginClick }) {
       <div className="p-8">
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold mb-2">Create your account</h1>
-          <p className="text-gray-dark dark:text-gray">Get started with Limiter today</p>
+          <p className="text-gray-dark dark:text-gray">Get started with Limitter today</p>
         </div>
         
         {error && (

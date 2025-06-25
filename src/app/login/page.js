@@ -82,7 +82,7 @@ export default function Login() {
           <div className="p-8">
             <div className="text-center mb-8">
               <h1 className="text-2xl font-bold mb-2">Welcome back</h1>
-              <p className="text-gray-dark dark:text-gray">Sign in to your Limiter account</p>
+              <p className="text-gray-dark dark:text-gray">Sign in to your Limitter account</p>
             </div>
             
             {error && (

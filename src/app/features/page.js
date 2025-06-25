@@ -16,7 +16,7 @@ export default function Features() {
               Powerful features to <span className="gradient-text">boost your productivity</span>
             </h1>
             <p className="text-xl text-gray-dark dark:text-gray max-w-2xl mx-auto mb-8">
-              Limiter comes packed with smart tools to help you stay focused and make the most of your time.
+              Limitter comes packed with smart tools to help you stay focused and make the most of your time.
             </p>
           </div>
         </div>
@@ -231,7 +231,7 @@ export default function Features() {
               </div>
               <h2 className="text-3xl font-bold mb-4">Beautiful, distraction-free blocking</h2>
               <p className="text-gray-dark dark:text-gray mb-6">
-                When your time is up, Limiter displays a clean, modern blocking modal that can&apos;t be easily dismissed, helping you break the habit of mindless browsing.
+                When your time is up, Limitter displays a clean, modern blocking modal that can&apos;t be easily dismissed, helping you break the habit of mindless browsing.
               </p>
               
               <ul className="space-y-4">
@@ -361,7 +361,7 @@ export default function Features() {
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold mb-4">More powerful features</h2>
             <p className="text-gray-dark dark:text-gray max-w-2xl mx-auto">
-              Limiter is packed with features to help you stay focused and be more productive.
+              Limitter is packed with features to help you stay focused and be more productive.
             </p>
           </div>
           
@@ -448,7 +448,7 @@ export default function Features() {
           <div className="bg-background rounded-xl p-8 md:p-12 shadow-lg border border-gray-light dark:border-gray-dark/30 text-center">
             <h2 className="text-3xl font-bold mb-4">Ready to stay focused?</h2>
             <p className="text-gray-dark dark:text-gray max-w-xl mx-auto mb-8">
-              Join thousands of users who have improved their productivity with Limiter.
+              Join thousands of users who have improved their productivity with Limitter.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link 

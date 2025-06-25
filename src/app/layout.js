@@ -5,8 +5,8 @@ import './globals.css';
 const geist = Geist({ subsets: ['latin'] });
 
 export const metadata = {
-  title: 'Limiter - Take Control of Your Time',
-  description: 'Manage your online time effectively with Limiter',
+  title: 'Limitter - Take Control of Your Time',
+  description: 'Manage your online time effectively with Limitter',
 };
 
 export default function RootLayout({ children }) {

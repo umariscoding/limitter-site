@@ -1,6 +1,5 @@
 import { updateSiteTimeTracking, getUserSitesTimeStatus, resetDailySiteTimes } from '../../../../lib/firebase';
 
-// Handle POST requests from Chrome extension
 export async function POST(request) {
   try {
     const { action, userId, siteId, timeSpentSeconds, url } = await request.json();
@@ -51,7 +50,6 @@ export async function POST(request) {
   }
 }
 
-// Handle GET requests (for getting sites status)
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
