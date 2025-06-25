@@ -10,6 +10,10 @@
   --gray-light: #f3f4f6;
   --gray: #9ca3af;
   --gray-dark: #374151;
+  --background-color: #ffffff;
+  --text-color: #333333;
+  --heading-color: #203c74;
+  --link-color: #203c74;
 }
 
 @theme inline {
@@ -33,6 +37,10 @@
     --gray-light: #1f2937;
     --gray: #6b7280;
     --gray-dark: #d1d5db;
+    --background-color: #1a1a1a;
+    --text-color: #ffffff;
+    --heading-color: #ffffff;
+    --link-color: #4a90e2;
   }
 }
 

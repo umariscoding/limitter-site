@@ -4,7 +4,7 @@ export default function Footer() {
   return (
     <footer className="bg-gray-light dark:bg-gray-dark/10 py-12 mt-12">
       <div className="container mx-auto px-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           <div>
             <div className="flex items-center gap-2 mb-4">
               <Image src="/icon16.png" alt="Limitter" width={32} height={32} />
@@ -35,6 +35,13 @@ export default function Footer() {
                 <span className="font-medium">Support Hours:</span><br />
                 Mon-Fri, 9am-5pm EST
               </li>
+            </ul>
+          </div>
+
+          <div>
+            <h3 className="font-bold text-lg mb-4">Legal</h3>
+            <ul className="space-y-2">
+              <li><Link href="/privacy-policy" className="text-gray-dark dark:text-gray hover:text-primary">Privacy Policy</Link></li>
             </ul>
           </div>
         </div>
