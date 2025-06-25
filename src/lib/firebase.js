@@ -2330,9 +2330,10 @@ export const updateUserStats = async (change, type) => {
 
   try {
     await runTransaction(db, async (transaction) => {
-      const statsDoc = await transaction.get(statsRef);
+      let statsDoc = await transaction.get(statsRef);
       if (!statsDoc.exists()) {
-        throw new Error('Admin stats document does not exist');
+        await initializeAdminStats();
+        statsDoc = await transaction.get(statsRef);
       }
       const stats = statsDoc.data();
 
@@ -2491,9 +2492,10 @@ const updateRevenueStats = async (amount, type, transactionDetails) => {
 
   try {
     await runTransaction(db, async (transaction) => {
-      const statsDoc = await transaction.get(statsRef);
+      let statsDoc = await transaction.get(statsRef);
       if (!statsDoc.exists()) {
-        throw new Error('Admin stats document does not exist');
+        await initializeAdminStats();
+        statsDoc = await transaction.get(statsRef);
       }
       let stats = statsDoc.data();
 
