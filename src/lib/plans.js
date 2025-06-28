@@ -34,7 +34,7 @@ export const PLANS = {
     price: 11.99,
     features: [
       "Up to 10 devices",
-      "200 overrides",
+      "200 free overrides/month",
       "AI usage insights",
       "Journaling + override justification",
       "90-day encrypted usage history",

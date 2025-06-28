@@ -556,7 +556,7 @@ export const updateUserSubscription = async (userId, plan, paymentData) => {
       };
       
       const benefitsText = plan === 'elite' 
-        ? '200 overrides'
+        ? '200 free overrides/month'
         : plan === 'pro' 
           ? '15 free overrides/month'
           : 'basic features';
@@ -601,7 +601,7 @@ export const updateUserSubscription = async (userId, plan, paymentData) => {
     };
     
     const benefitsText = plan === 'elite' 
-      ? '200 overrides'
+      ? '200 free overrides/month'
       : plan === 'pro' 
         ? '15 free overrides/month'
         : 'basic features';
@@ -1614,7 +1614,7 @@ export const adminChangeUserPlan = async (userId, newPlan, reason = "Admin chang
     };
     
     const benefitsText = newPlan === 'elite' 
-      ? '200 overrides'
+      ? '200 free overrides/month'
       : newPlan === 'pro' 
         ? '15 free overrides/month'
         : 'basic features';
@@ -1666,7 +1666,7 @@ export const grantPlanBenefits = async (userId, newPlan, previousPlan = 'free', 
         sites_limit: -1, // unlimited
         devices_limit: 10,
         lockout_duration: -1, // custom duration/end time
-        features: ['200 overrides', 'AI usage insights', 'Journaling', '90-day encrypted history', 'Smart AI recommendations']
+        features: ['200 free overrides/month', 'AI usage insights', 'Journaling', '90-day encrypted history', 'Smart AI recommendations']
       }
     };
     
