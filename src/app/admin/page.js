@@ -1386,7 +1386,7 @@ export default function AdminPanel() {
                         name: 'Elite',
                         price: '$11.99',
                         overrides: 200,
-                        features: ['10 devices', 'Unlimited overrides', 'AI insights', 'Journaling', '90-day history', 'Smart AI recommendations'],
+                        features: ['10 devices', '200 overrides', 'AI insights', 'Journaling', '90-day history', 'Smart AI recommendations'],
                         gradient: 'from-purple-500 to-purple-600',
                         borderColor: 'border-purple-500'
                       }

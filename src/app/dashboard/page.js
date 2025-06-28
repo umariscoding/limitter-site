@@ -492,7 +492,7 @@ export default function Dashboard() {
                             </svg>
                             <span className="text-sm">
                               {subscription?.plan === 'free' || !subscription?.plan ? '$1.99 per override' : 
-                               subscription?.plan === 'pro' ? '15 free overrides/month' : 'Unlimited overrides'}
+                               subscription?.plan === 'pro' ? '15 free overrides/month' : '200 free overrides/month'}
                             </span>
                           </li>
                           {(subscription?.plan === 'pro' || subscription?.plan === 'elite') && (
@@ -599,7 +599,7 @@ export default function Dashboard() {
                           )}
                           {subscription?.plan === 'elite' && (
                             <p className="text-gray-600 dark:text-gray-400">
-                              <span className="font-medium">Elite Plan:</span> Unlimited overrides included! No need to purchase overrides.
+                              <span className="font-medium">Elite Plan:</span> 200 free overrides per month!
                             </p>
                           )}
                         </div>
@@ -679,7 +679,7 @@ export default function Dashboard() {
                             <span className="font-medium">Buy Overrides</span>
                           </div>
                           <p className="text-sm text-gray-600 dark:text-gray-400">
-                            {subscription?.plan === 'elite' ? 'Unlimited overrides included' : 'Purchase overrides at $1.99 each'}
+                            {subscription?.plan === 'elite' ? '200 free overrides included' : 'Purchase overrides at $1.99 each'}
                           </p>
                         </Link>
                         

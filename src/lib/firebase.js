@@ -556,7 +556,7 @@ export const updateUserSubscription = async (userId, plan, paymentData) => {
       };
       
       const benefitsText = plan === 'elite' 
-        ? 'unlimited overrides'
+        ? '200 overrides'
         : plan === 'pro' 
           ? '15 free overrides/month'
           : 'basic features';
@@ -601,7 +601,7 @@ export const updateUserSubscription = async (userId, plan, paymentData) => {
     };
     
     const benefitsText = plan === 'elite' 
-      ? 'unlimited overrides'
+      ? '200 overrides'
       : plan === 'pro' 
         ? '15 free overrides/month'
         : 'basic features';
@@ -1614,7 +1614,7 @@ export const adminChangeUserPlan = async (userId, newPlan, reason = "Admin chang
     };
     
     const benefitsText = newPlan === 'elite' 
-      ? 'unlimited overrides'
+      ? '200 overrides'
       : newPlan === 'pro' 
         ? '15 free overrides/month'
         : 'basic features';
