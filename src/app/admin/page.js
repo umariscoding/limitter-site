@@ -235,7 +235,7 @@ export default function AdminPanel() {
       const planDetails = {
         free: { overrides: 0, name: 'FREE' },
         pro: { overrides: 15, name: 'PRO' },
-        elite: { overrides: 200, name: 'ELITE' }
+        elite: { overrides: 100, name: 'ELITE' }
       }[selectedPlan];
       
       await adminChangeUserPlan(selectedUser.profile.id, selectedPlan, "Admin panel plan change");
@@ -1385,8 +1385,8 @@ export default function AdminPanel() {
                         id: 'elite',
                         name: 'Elite',
                         price: '$11.99',
-                        overrides: 200,
-                        features: ['10 devices', '200 overrides', 'AI insights', 'Journaling', '90-day history', 'Smart AI recommendations'],
+                        overrides: 100,
+                        features: ['10 devices', '100 overrides', 'AI insights', 'Journaling', '90-day history', 'Smart AI recommendations'],
                         gradient: 'from-purple-500 to-purple-600',
                         borderColor: 'border-purple-500'
                       }
@@ -1475,7 +1475,7 @@ export default function AdminPanel() {
                         const planBenefits = {
                           free: { overrides: 0, monthly: 0 },
                           pro: { overrides: 15, monthly: 15 },
-                          elite: { overrides: 200, monthly: 200 }
+                          elite: { overrides: 100, monthly: 100 }
                         };
                         const benefits = planBenefits[selectedPlan] || planBenefits.free;
                         

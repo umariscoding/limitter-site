@@ -556,7 +556,7 @@ export const updateUserSubscription = async (userId, plan, paymentData) => {
       };
       
       const benefitsText = plan === 'elite' 
-        ? '200 free overrides/month'
+        ? '100 free overrides/month'
         : plan === 'pro' 
           ? '15 free overrides/month'
           : 'basic features';
@@ -601,7 +601,7 @@ export const updateUserSubscription = async (userId, plan, paymentData) => {
     };
     
     const benefitsText = plan === 'elite' 
-      ? '200 free overrides/month'
+      ? '100 free overrides/month'
       : plan === 'pro' 
         ? '15 free overrides/month'
         : 'basic features';
@@ -1614,7 +1614,7 @@ export const adminChangeUserPlan = async (userId, newPlan, reason = "Admin chang
     };
     
     const benefitsText = newPlan === 'elite' 
-      ? '200 free overrides/month'
+      ? '100 free overrides/month'
       : newPlan === 'pro' 
         ? '15 free overrides/month'
         : 'basic features';
@@ -1661,12 +1661,12 @@ export const grantPlanBenefits = async (userId, newPlan, previousPlan = 'free', 
         features: ['Unlimited time tracking', 'Custom lockout durations', '15 free overrides/month', 'AI nudges', 'Sync + basic reports']
       },
       elite: {
-        overrides: 200,
-        monthly_overrides: 200,
+        overrides: 100,
+        monthly_overrides: 100,
         sites_limit: -1, // unlimited
         devices_limit: 10,
         lockout_duration: -1, // custom duration/end time
-        features: ['200 free overrides/month', 'AI usage insights', 'Journaling', '90-day encrypted history', 'Smart AI recommendations']
+        features: ['100 free overrides/month', 'AI usage insights', 'Journaling', '90-day encrypted history', 'Smart AI recommendations']
       }
     };
     
@@ -1677,7 +1677,7 @@ export const grantPlanBenefits = async (userId, newPlan, previousPlan = 'free', 
     let resetToZero = false;
     
     if (newPlan === 'elite') {
-      overridesToGrant = 200;
+      overridesToGrant = 100;
     } else if (newPlan === 'pro') {
       overridesToGrant = 15;
     } else if (newPlan === 'free' && (previousPlan === 'elite' || previousPlan === 'pro')) {
