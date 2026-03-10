@@ -3,8 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import Navbar from "../../components/Navbar";
-import Footer from "../../components/Footer";
+import { PageLoader } from "../../components/common";
 import { useAuth } from "../../context/AuthContext";
 
 export default function Login() {
@@ -15,10 +14,8 @@ export default function Login() {
   const router = useRouter();
   const { user, login, loading } = useAuth();
 
-  // Redirect if already logged in
   useEffect(() => {
     if (!loading && user) {
-      console.log("User already logged in, redirecting to dashboard");
       router.push("/dashboard");
     }
   }, [user, loading, router]);
@@ -29,55 +26,32 @@ export default function Login() {
     setError("");
 
     try {
-      console.log("📝 Login page: Starting login...");
-      // Use AuthContext login function
       const result = await login(email, password);
       
       if (result.success) {
-        console.log("✅ Login page: Login successful, redirecting to dashboard");
-        // Reset form
         setEmail("");
         setPassword("");
-        // Use window.location for a full page refresh after login
         window.location.href = "/dashboard";
       } else {
-        console.error("❌ Login page: Login failed:", result.error);
         setError(result.error || "Failed to login. Please try again.");
       }
     } catch (err) {
-      console.error("❌ Login page: Login error:", err);
       setError(err.message || "Failed to login. Please try again.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Show loading spinner while checking auth state
   if (loading) {
-    return (
-      <>
-        <Navbar />
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading...</p>
-          </div>
-        </div>
-        <Footer />
-      </>
-    );
+    return <PageLoader message="Loading..." />;
   }
 
-  // Don't render if user is logged in (will redirect)
   if (user) {
     return null;
   }
 
   return (
-    <>
-      <Navbar />
-      
-      <div className="min-h-screen py-16 px-4">
+    <div className="min-h-screen py-16 px-4">
         <div className="max-w-md mx-auto bg-background rounded-xl shadow-md overflow-hidden">
           <div className="p-8">
             <div className="text-center mb-8">
@@ -153,8 +127,5 @@ export default function Login() {
           </div>
         </div>
       </div>
-      
-      <Footer />
-    </>
   );
 } 

@@ -1,15 +1,11 @@
 "use client";
 
-import React from 'react';
-import Navbar from '../../components/Navbar';
-import Footer from '../../components/Footer';
-import './styles.css';
+import React from "react";
+import "./styles.css";
 
 export default function PrivacyPolicy() {
   return (
-    <>
-      <Navbar />
-      <div className="privacy-policy-container">
+    <div className="privacy-policy-container">
         <div className="privacy-policy-content">
           <h1>Privacy Policy</h1>
           <p>Last updated: June 25, 2025</p>
@@ -190,7 +186,5 @@ export default function PrivacyPolicy() {
           <p>Don&apos;t have an account?{" "}</p>
         </div>
       </div>
-      <Footer />
-    </>
   );
 } 

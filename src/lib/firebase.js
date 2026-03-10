@@ -29,13 +29,13 @@ import {
 } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
+  apiKey: "AIzaSyCRcKOOzsp_nX8auUOhAFR-UVhGqIgmOjU",
+  authDomain: "test-ext-ad0b2.firebaseapp.com",
+  projectId: "test-ext-ad0b2",
+  storageBucket: "test-ext-ad0b2.firebasestorage.app",
+  messagingSenderId: "642984588666",
+  appId: "1:642984588666:web:dd1fcd739567df3a4d92c3",
+  measurementId: "G-B0MC8CDXCK",
 };
 
 if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
