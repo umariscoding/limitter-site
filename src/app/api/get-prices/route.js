@@ -2,10 +2,9 @@ import Stripe from 'stripe';
 import { NextResponse } from 'next/server';
 import { PLANS, OVERRIDE_PRICE_ID } from '../../../lib/plans';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-
 export async function GET() {
   try {
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
     const priceIds = [
       ...Object.values(PLANS)
         .filter(plan => plan.priceId)

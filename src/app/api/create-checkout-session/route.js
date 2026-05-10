@@ -2,12 +2,11 @@ import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { PRICE_IDS, isValidPlan } from '../../../lib/plans';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2023-10-16' 
-});
-
 export async function POST(request) {
   try {
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: '2023-10-16'
+    });
     if (!process.env.NEXT_PUBLIC_BASE_URL) {
       console.error('BASE_URL not configured');
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });

@@ -2,11 +2,12 @@ import { headers } from 'next/headers';
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+let _stripe;
+const getStripe = () => _stripe || (_stripe = new Stripe(process.env.STRIPE_SECRET_KEY));
 
 export async function POST(request) {
   try {
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
     if (!webhookSecret) {
       return NextResponse.json(
         { error: 'Webhook secret is not configured' },
@@ -14,6 +15,7 @@ export async function POST(request) {
       );
     }
 
+    const stripe = getStripe();
     const body = await request.text();
     const headersList = await headers();
     const signature = headersList.get('stripe-signature');
