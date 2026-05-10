@@ -6,3 +6,4 @@ export { default as AdminUserModal } from "./AdminUserModal";
 export { default as AdminGrantModal } from "./AdminGrantModal";
 export { default as AdminPlanModal } from "./AdminPlanModal";
 export { default as AdminUserSitesModal } from "./AdminUserSitesModal";
+export { default as AdminMessagesTab } from "./AdminMessagesTab";

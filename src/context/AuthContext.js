@@ -58,38 +58,44 @@ export function AuthProvider({ children }) {
 
     try {
       if (firebaseUser) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        const profileTimeout = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Profile fetch timeout')), 8000);
-        });
-        
-        const userProfile = await Promise.race([
-          ensureUserProfile(firebaseUser.uid),
-          profileTimeout
-        ]);
-        
+        await new Promise(resolve => setTimeout(resolve, 500));
+
         const newUser = {
           uid: firebaseUser.uid,
           id: firebaseUser.uid,
           email: firebaseUser.email,
           emailVerified: firebaseUser.emailVerified,
-          displayName: userProfile?.profile_name || firebaseUser.displayName,
-          ...(userProfile || {})
+          displayName: firebaseUser.displayName,
         };
-        
+
+        let userProfile = null;
+        try {
+          const profileTimeout = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Profile fetch timeout')), 8000);
+          });
+          userProfile = await Promise.race([
+            ensureUserProfile(firebaseUser.uid),
+            profileTimeout
+          ]);
+          if (userProfile) {
+            newUser.displayName = userProfile.profile_name || newUser.displayName;
+            Object.assign(newUser, userProfile);
+          }
+        } catch (profileError) {
+          console.warn("⚠️ Could not load user profile, continuing with basic auth:", profileError.message);
+        }
+
         setUser(newUser);
 
         try {
-          
           const sites = await getBlockedSites(firebaseUser.uid, true);
           setBlockedSites(sites);
-          
+
           const totalSites = sites.length;
           const activeSites = sites.filter(site => site.is_active !== false).length;
           const totalTimeSpent = sites.reduce((sum, site) => sum + (site.total_time_spent || 0), 0);
           const todayTimeSpent = sites.reduce((sum, site) => sum + (site.time_spent_today || 0), 0);
-          
+
           const stats = {
             totalSitesBlocked: totalSites,
             activeSitesBlocked: activeSites,
@@ -98,10 +104,10 @@ export function AuthProvider({ children }) {
             todayTimeSpent: todayTimeSpent,
             lastUpdated: new Date(),
           };
-          
+
           setUserStats(stats);
-        } catch (error) {
-          console.error("❌ Error loading user data:", error);
+        } catch (dataError) {
+          console.warn("⚠️ Could not load user data, continuing with basic auth:", dataError.message);
         }
       } else {
         setUser(null);

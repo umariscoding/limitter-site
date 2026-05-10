@@ -27,6 +27,7 @@ export default function Footer() {
           <div>
             <h3 className="font-bold text-lg mb-4">Contact</h3>
             <ul className="space-y-2">
+              <li><Link href="/contact" className="text-gray-dark dark:text-gray hover:text-primary">Contact Us</Link></li>
               <li className="text-gray-dark dark:text-gray">
                 <span className="font-medium">Email:</span><br />
                 <a href="mailto:support@Limitter.com" className="hover:text-primary">support@Limitter.com</a>

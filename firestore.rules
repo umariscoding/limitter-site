@@ -1,142 +1,170 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper functions
+
     function isAuthenticated() {
       return request.auth != null;
     }
-    
+
     function isAdmin() {
-      return isAuthenticated() && 
+      return isAuthenticated() &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
     }
-    
+
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function isWebhookRequest() {
-      return request.resource.data.keys().hasAll(['updated_at']) &&
-             request.resource.data.updated_at is timestamp;
-    }
-
-    // Users collection
+    // ─── Users ───
     match /users/{userId} {
       allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
       allow create: if isAuthenticated() && isOwner(userId);
-      allow update: if isAuthenticated() && (isOwner(userId) || isAdmin()) || 
-        (isWebhookRequest() && 
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['plan', 'override_balance', 'updated_at']));
+      allow update: if isAuthenticated() && (isOwner(userId) || isAdmin());
       allow delete: if isAdmin();
     }
-    
-    // Blocked sites collection
+
+    // ─── Blocked Sites ───
+    // get = single doc read (resource.data works)
+    // list = collection query (resource.data does NOT work, must allow and rely on query filters)
     match /blocked_sites/{siteId} {
-      allow read: if isAuthenticated() && (
-        siteId.matches('^' + request.auth.uid + '_.*') || 
-        resource.data.user_id == request.auth.uid ||
-        isAdmin()
+      allow get: if isAuthenticated() && (
+        resource.data.user_id == request.auth.uid || isAdmin()
       );
-      allow write: if isAuthenticated() && (
-        siteId.matches('^' + request.auth.uid + '_.*') || 
-        request.resource.data.user_id == request.auth.uid ||
-        isAdmin()
+      allow list: if isAuthenticated();
+      allow create: if isAuthenticated() && (
+        request.resource.data.user_id == request.auth.uid || isAdmin()
       );
+      allow update: if isAuthenticated() && (
+        resource.data.user_id == request.auth.uid || isAdmin()
+      );
+      allow delete: if isAdmin();
     }
-    
-    // Subscriptions collection
+
+    // ─── Subscriptions ───
     match /subscriptions/{userId} {
       allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
-      allow write: if isAuthenticated() && (isOwner(userId) || isAdmin()) ||
-        (isWebhookRequest() && 
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['plan', 'status', 'updated_at', 'expires_at']));
-    }
-    
-    // User overrides collection
-    match /user_overrides/{userId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() || isWebhookRequest();
-      allow update: if isAuthenticated() || 
-        (isWebhookRequest() && 
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['overrides', 'updated_at']));
+      allow create: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      allow update: if isAuthenticated() && (isOwner(userId) || isAdmin());
       allow delete: if isAdmin();
     }
-    
-    // Transactions collection
-    match /transactions/{transactionId} {
-      function isValidTransaction() {
-        let data = request.resource.data;
-        return data.keys().hasAll(['user_id', 'type', 'amount', 'status', 'payment_method', 'created_at']) &&
-          data.user_id == request.auth.uid &&
-          data.amount is number &&
-          data.amount > 0 &&
-          (data.type in ['plan_purchase', 'override_purchase']) &&
-          (data.status in ['pending', 'completed', 'failed']) &&
-          data.payment_method is string;
-      }
 
-      allow read: if isAuthenticated() && (
-        resource.data.user_id == request.auth.uid || 
-        isAdmin()
-      );
-      allow create: if isAuthenticated() && (isValidTransaction() || isWebhookRequest());
-      allow update: if isAdmin() || isWebhookRequest();
+    // ─── Subscription Plans (read-only reference data) ───
+    match /subscription_plans/{planId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // ─── User Overrides ───
+    match /user_overrides/{userId} {
+      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      allow create: if isAuthenticated() && isOwner(userId);
+      allow update: if isAuthenticated() && (isOwner(userId) || isAdmin());
       allow delete: if isAdmin();
     }
-    
-    // User activity collection
-    match /user_activity/{activityId} {
-      allow read: if isAuthenticated() && (
-        resource.data.user_id == request.auth.uid || 
-        isAdmin()
+
+    // ─── Transactions ───
+    // get = single doc, list = query (user queries with where user_id == uid)
+    match /transactions/{transactionId} {
+      allow get: if isAuthenticated() && (
+        resource.data.user_id == request.auth.uid || isAdmin()
       );
+      allow list: if isAuthenticated();
       allow create: if isAuthenticated() && (
-        request.resource.data.user_id == request.auth.uid || 
-        isAdmin()
-      ) || isWebhookRequest();
+        request.resource.data.user_id == request.auth.uid || isAdmin()
+      );
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ─── User Activity ───
+    match /user_activity/{activityId} {
+      allow get: if isAuthenticated() && (
+        resource.data.user_id == request.auth.uid || isAdmin()
+      );
+      allow list: if isAuthenticated();
+      allow create: if isAuthenticated() && (
+        request.resource.data.user_id == request.auth.uid || isAdmin()
+      );
       allow update, delete: if isAdmin();
     }
-    
+
+    // ─── Override History (immutable) ───
     match /override_history/{historyId} {
-      function isValidOverrideHistory() {
-        let data = request.resource.data;
-        return data.keys().hasAll(['user_id', 'site_url', 'timestamp', 'month', 'override_type', 'plan', 'created_at']) &&
-          data.user_id == request.auth.uid &&
-          data.site_url is string &&
-          data.timestamp is string &&
-          data.month is string &&
-          data.override_type is string &&
-          data.plan is string &&
-          data.created_at is string;
+      allow get: if isAuthenticated() && (
+        resource.data.user_id == request.auth.uid || isAdmin()
+      );
+      allow list: if isAuthenticated();
+      allow create: if isAuthenticated() && (
+        request.resource.data.user_id == request.auth.uid
+      );
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ─── Contact Messages ───
+    match /contact_messages/{messageId} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // ─── Admin Collections ───
+    match /admin_stats/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /admin_audit/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /admin_audit_log/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ─── Accounts (API backend sub-collections) ───
+    match /accounts/{accountId} {
+      allow read: if isAuthenticated() && (isOwner(accountId) || isAdmin());
+      allow write: if isAdmin();
+
+      match /policies/{policyId} {
+        allow read: if isAuthenticated() && (isOwner(accountId) || isAdmin());
+        allow write: if isAdmin();
       }
 
-      allow read: if isAuthenticated() && (
-        resource.data.user_id == request.auth.uid || 
-        isAdmin()
-      );
-      allow create: if isAuthenticated() && isValidOverrideHistory();
-      allow update: if false;  // Immutable records
-      allow delete: if false;  // No deletion allowed
+      match /devices/{deviceId} {
+        allow read: if isAuthenticated() && (isOwner(accountId) || isAdmin());
+        allow write: if isAdmin();
+      }
+
+      match /overrides/{overrideId} {
+        allow read: if isAuthenticated() && (isOwner(accountId) || isAdmin());
+        allow write: if isAdmin();
+      }
+
+      match /override_counters/{monthKey} {
+        allow read: if isAuthenticated() && (isOwner(accountId) || isAdmin());
+        allow write: if isAdmin();
+      }
+
+      match /purchases/{purchaseId} {
+        allow read: if isAuthenticated() && (isOwner(accountId) || isAdmin());
+        allow write: if isAdmin();
+      }
+
+      match /subscriptions/{subscriptionId} {
+        allow read: if isAuthenticated() && (isOwner(accountId) || isAdmin());
+        allow write: if isAdmin();
+      }
+
+      match /audit_logs/{logId} {
+        allow read: if isAdmin();
+        allow write: if isAdmin();
+      }
     }
 
-    
-    // Admin collections - only accessible by admins
-    match /admin_stats/{docId} {
-      allow read, write: if isAuthenticated();
-    }
-    
-    match /admin_audit/{docId} {
-      allow read, write: if isAuthenticated();
-    }
-    
-    match /admin_audit_log/{docId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    // Default deny all other access
+    // ─── Default: deny everything else ───
     match /{document=**} {
       allow read, write: if false;
     }
   }
-} 
+}

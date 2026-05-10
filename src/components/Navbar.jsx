@@ -70,6 +70,8 @@ export default function Navbar({ onNavigate }) {
       } else if (section === 'signup') {
         console.log("📝 Navigating to signup");
         router.push('/signup');
+      } else if (section === 'contact') {
+        router.push('/contact');
       } else if (section === 'features') {
         console.log("⚡ Navigating to features");
         router.push('/#features');
@@ -133,6 +135,12 @@ export default function Navbar({ onNavigate }) {
             className="text-foreground hover:text-primary-light transition-colors cursor-pointer"
           >
             Pricing
+          </button>
+          <button
+            onClick={() => handleNavigation('contact')}
+            className="text-foreground hover:text-primary-light transition-colors cursor-pointer"
+          >
+            Contact
           </button>
 
           {user ? (
@@ -222,6 +230,12 @@ export default function Navbar({ onNavigate }) {
               className="text-foreground hover:text-primary-light transition-colors cursor-pointer text-left"
             >
               Pricing
+            </button>
+            <button
+              onClick={() => handleNavigation('contact')}
+              className="text-foreground hover:text-primary-light transition-colors cursor-pointer text-left"
+            >
+              Contact
             </button>
 
             {user ? (
