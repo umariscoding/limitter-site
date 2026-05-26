@@ -9,7 +9,6 @@ import SiteManager from "../../components/SiteManager";
 import BlockedSitesModal from "../../components/BlockedSitesModal";
 import { PageLoader, StatCard, StatusAlert } from "../../components/common";
 import {
-  QuickInsights,
   ProfileCard,
   SubscriptionCard,
   OverridesCard,
@@ -17,196 +16,139 @@ import {
   TrackingSitesCard,
 } from "./components";
 import { useAuth } from "../../context/AuthContext";
-import {
-  getUserSubscription,
-  getDashboardData,
-  getUserOverrideStats,
-  updateUserSubscription,
-  purchaseOverrides,
-} from "../../lib/firebase";
+import { accountApi, policyApi, overrideApi, billingApi } from "../../lib/api";
 import { toast } from "react-hot-toast";
 import { getAverageTimeLimit } from "./utils";
 
 export default function Dashboard() {
-  const {
-    user,
-    userStats,
-    blockedSites,
-    loading,
-    refreshUserData,
-    isEmailVerified,
-  } = useAuth();
-
+  const { user, loading, isEmailVerified } = useAuth();
   const router = useRouter();
 
   const [subscription, setSubscription] = useState(null);
-  const [dashboardData, setDashboardData] = useState(null);
+  const [policies, setPolicies] = useState([]);
   const [overrideStats, setOverrideStats] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [devices, setDevices] = useState([]);
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  const [displayName, setDisplayName] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   const [activeView, setActiveView] = useState("dashboard");
   const [showSiteManager, setShowSiteManager] = useState(false);
   const [showBlockedSitesModal, setShowBlockedSitesModal] = useState(false);
-  const [editingSiteData, setEditingSiteData] = useState(null);
+  const [editingPolicy, setEditingPolicy] = useState(null);
 
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [overridePurchaseSuccess, setOverridePurchaseSuccess] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
+  const activePolicies = useMemo(() => {
+    return policies.filter(p => p.isActive && !p.isArchived);
+  }, [policies]);
+
   const stats = useMemo(() => {
     return {
-      trackedSites: blockedSites.length,
-      averageTimeLimit: getAverageTimeLimit(blockedSites),
-      activeSites:
-        dashboardData?.stats?.activeSites ?? userStats?.activeSitesBlocked ?? 0,
+      totalPolicies: activePolicies.length,
+      averageTimeLimit: getAverageTimeLimit(activePolicies),
+      activePolicies: activePolicies.filter(p => {
+        const state = p.state || {};
+        return !state.isExhaustedToday;
+      }).length,
     };
-  }, [blockedSites, dashboardData, userStats]);
+  }, [activePolicies]);
 
   const fetchDashboardData = async () => {
     if (!user?.uid) return;
-
     try {
-      setIsLoading(true);
-
-      const [dashData, subData, overrideData] = await Promise.all([
-        getDashboardData(user.uid),
-        getUserSubscription(user.uid),
-        getUserOverrideStats(user.uid),
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const [profileData, policiesData, overrideData] = await Promise.all([
+        accountApi.getProfile(),
+        policyApi.list(tz),
+        overrideApi.getBalance().catch(() => null),
       ]);
 
-      setDashboardData(dashData);
-      setSubscription(subData);
-      setOverrideStats(overrideData);
+      const sub = profileData?.subscription || {};
+      const account = profileData?.account || {};
+      const userProfile = profileData?.user || {};
+      setDisplayName(userProfile.displayName || account.name || '');
+      setSubscription({
+        plan: sub.planCode || account.currentPlanCode || 'free',
+        status: sub.status || 'active',
+        provider: sub.provider || null,
+        autoRenewing: sub.autoRenewing || false,
+        expiryTimeMillis: sub.expiryTimeMillis || null,
+        stripeCustomerId: sub.stripeCustomerId || null,
+        _raw: sub,
+      });
+
+      const pList = Array.isArray(policiesData) ? policiesData : (policiesData?.policies || []);
+      setPolicies(pList);
+
+      if (overrideData) {
+        setOverrideStats({
+          overrides_left: (overrideData.freeCreditsRemaining || 0) + (overrideData.grantedCreditsRemaining || 0),
+          monthly_limit: overrideData.freeOverridesPerMonth || 0,
+          overrides_used_total: overrideData.totalOverridesUsed || 0,
+          total_overrides_purchased: overrideData.paidOverridesUsed || 0,
+        });
+      }
+
+      setDevices(profileData?.devices || []);
+      setProfileLoaded(true);
     } catch (error) {
-      console.error("❌ Error fetching dashboard data:", error);
-    } finally {
-      setIsLoading(false);
+      console.error("Error fetching dashboard data:", error);
+      setProfileLoaded(true);
     }
   };
 
   const handlePaymentSuccess = async (sessionId) => {
     if (!user) return;
-
     try {
-      const response = await fetch("/api/get-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch session details");
-      }
-
-      const { session } = await response.json();
-      const { paymentType, plan, quantity } = session.metadata;
-      const paymentMethod = session.payment_intent?.payment_method;
-
-      const paymentData = {
-        cardNumber: paymentMethod?.card?.last4 || "",
-        expiryDate: paymentMethod?.card
-          ? `${paymentMethod.card.exp_month}/${paymentMethod.card.exp_year}`
-          : "",
-        nameOnCard: session.customer_details?.name || "",
-      };
-
-      if (paymentType === "plan") {
-        await updateUserSubscription(user.uid, plan, paymentData);
+      const result = await billingApi.stripeVerifySession(sessionId);
+      if (result.subscription) {
         setPaymentSuccess(true);
-        toast.success(`Successfully upgraded to ${plan} plan!`);
-      } else if (paymentType === "overrides") {
-        const overrideQty = parseInt(quantity, 10) || 1;
-        await purchaseOverrides(user.uid, overrideQty, paymentData);
+        toast.success(`Successfully upgraded to ${result.subscription.planCode} plan!`);
+      } else if (result.appliedCredits) {
         setOverridePurchaseSuccess(true);
-        toast.success(`Successfully purchased ${overrideQty} overrides!`);
+        toast.success(`Successfully purchased ${result.appliedCredits} overrides!`);
       }
-
-      if (refreshUserData) {
-        await refreshUserData();
-      }
-
+      await fetchDashboardData();
       setTimeout(() => {
         setPaymentSuccess(false);
         setOverridePurchaseSuccess(false);
       }, 5000);
     } catch (error) {
-      console.error("❌ Error processing payment success:", error);
       toast.error("Failed to process payment. Please contact support.");
-      throw error;
     }
   };
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.push("/login");
-      return;
-    }
+    if (!loading && !user) { router.push("/login"); return; }
+    if (!loading && user && !isEmailVerified) { router.push("/login"); return; }
+    if (!user) return;
 
-    if (!loading && user && !isEmailVerified) {
-      router.push("/login");
-      return;
-    }
-
-    const processPayment = async (sessionId) => {
-      if (isProcessingPayment) return;
-
-      setIsProcessingPayment(true);
-      setIsLoading(true);
-
-      try {
-        const url = new URL(window.location);
-        url.searchParams.delete("payment");
-        url.searchParams.delete("session_id");
-        window.history.replaceState({}, "", url);
-
-        await handlePaymentSuccess(sessionId);
-        await fetchDashboardData();
-      } catch (error) {
-        console.error("❌ Error processing payment:", error);
-        toast.error("Failed to process payment. Please try again.");
-      } finally {
-        setIsLoading(false);
-        setIsProcessingPayment(false);
-      }
-    };
-
-    const initializeDashboard = async () => {
-      if (!user) return;
-      setIsLoading(true);
-      await fetchDashboardData();
-      setIsLoading(false);
-    };
-
-    if (typeof window !== "undefined" && user) {
+    if (typeof window !== "undefined") {
       const urlParams = new URLSearchParams(window.location.search);
       const paymentParam = urlParams.get("payment");
       const sessionId = urlParams.get("session_id");
 
       if (paymentParam === "success" && sessionId && !isProcessingPayment) {
-        processPayment(sessionId);
-      } else if (!isProcessingPayment) {
-        initializeDashboard();
+        setIsProcessingPayment(true);
+        const url = new URL(window.location);
+        url.searchParams.delete("payment");
+        url.searchParams.delete("session_id");
+        window.history.replaceState({}, "", url);
+        handlePaymentSuccess(sessionId).finally(() => setIsProcessingPayment(false));
+      } else if (!profileLoaded && !isProcessingPayment) {
+        fetchDashboardData();
       }
     }
-  }, [user, loading, router, isEmailVerified, isProcessingPayment]);
+  }, [user, loading, isEmailVerified]);
 
-  const handleAddSiteClick = () => {
-    setEditingSiteData(null);
-    setShowSiteManager(true);
-  };
+  if (loading) return <PageLoader />;
+  if (!user) return null;
+  if (!profileLoaded) return <PageLoader message="Loading dashboard..." />;
 
-  const handleEditSite = (site) => {
-    setEditingSiteData(site);
-    setShowSiteManager(true);
-  };
-
-  if (loading || (isLoading && user)) {
-    return <PageLoader />;
-  }
-
-  if (!user) {
-    return null;
-  }
+  const userName = displayName || user?.displayName || '';
 
   return (
     <>
@@ -215,11 +157,10 @@ export default function Dashboard() {
           <div className="flex justify-between items-center mb-8">
             <div>
               <h1 className="text-3xl font-bold mb-2">
-                Welcome back
-                {user?.profile_name ? `, ${user.profile_name}` : ""}!
+                Welcome back{userName ? `, ${userName}` : ""}!
               </h1>
               <p className="text-gray-600 dark:text-gray-400">
-                Manage your Limitter settings and view your progress
+                Manage your limits and view your progress
               </p>
             </div>
           </div>
@@ -227,7 +168,7 @@ export default function Dashboard() {
           {paymentSuccess && (
             <StatusAlert
               icon={FaCheckCircle}
-              title="Payment Successful! 🎉"
+              title="Payment Successful!"
               message="Welcome to your premium plan! You now have access to all advanced features."
             />
           )}
@@ -235,44 +176,39 @@ export default function Dashboard() {
           {overridePurchaseSuccess && (
             <StatusAlert
               icon={FaCheckCircle}
-              title="Overrides Purchased! 🎉"
+              title="Overrides Purchased!"
               message="Your overrides have been added to your account and are ready to use."
             />
           )}
-
-          <QuickInsights
-            insights={dashboardData?.insights}
-            lastUpdated={dashboardData?.lastUpdated}
-          />
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <StatCard
               icon={FaLock}
               iconWrapClass="bg-primary/10"
               iconClass="text-primary"
-              label="Sites Tracking"
-              value={stats.trackedSites}
+              label="Active Limits"
+              value={stats.totalPolicies}
             />
             <StatCard
               icon={FaBolt}
               iconWrapClass="bg-purple-100 dark:bg-purple-900"
               iconClass="text-purple-600 dark:text-purple-400"
-              label="Average Time Limit"
+              label="Avg. Daily Limit"
               value={stats.averageTimeLimit}
             />
             <StatCard
               icon={FaChartBar}
               iconWrapClass="bg-blue-100 dark:bg-blue-900"
               iconClass="text-blue-600 dark:text-blue-400"
-              label="Active Sites"
-              value={stats.activeSites}
+              label="Not Exhausted"
+              value={stats.activePolicies}
             />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-1">
               <ProfileCard
-                user={user}
+                user={{ ...user, displayName: userName }}
                 subscription={subscription}
                 onOpenSettings={() => setActiveView("settings")}
               />
@@ -286,9 +222,8 @@ export default function Dashboard() {
                   onBack={() => setActiveView("dashboard")}
                   user={user}
                   subscription={subscription}
-                  blockedSites={blockedSites}
+                  policies={activePolicies}
                   overrideStats={overrideStats}
-                  dashboardData={dashboardData}
                 />
               ) : (
                 <>
@@ -300,21 +235,18 @@ export default function Dashboard() {
                   />
 
                   <QuickActionsCard
-                    onAddSite={handleAddSiteClick}
+                    onAddSite={() => { setEditingPolicy(null); setShowSiteManager(true); }}
                     onViewSites={() => setShowBlockedSitesModal(true)}
                     onOpenSettings={() => setActiveView("settings")}
                     onOpenAnalytics={() => setActiveView("analytics")}
-                    totalSites={
-                      dashboardData?.sites?.total ?? blockedSites.length
-                    }
+                    totalSites={activePolicies.length}
                     plan={subscription?.plan || "free"}
                   />
 
                   <TrackingSitesCard
-                    blockedSites={blockedSites}
-                    dashboardData={dashboardData}
+                    policies={activePolicies}
                     onViewSites={() => setShowBlockedSitesModal(true)}
-                    onAddSite={handleAddSiteClick}
+                    onAddSite={() => { setEditingPolicy(null); setShowSiteManager(true); }}
                   />
                 </>
               )}
@@ -327,15 +259,22 @@ export default function Dashboard() {
         isOpen={showSiteManager}
         onClose={() => {
           setShowSiteManager(false);
-          setEditingSiteData(null);
+          setEditingPolicy(null);
+          fetchDashboardData();
         }}
-        editingSiteData={editingSiteData}
+        editingPolicy={editingPolicy}
       />
 
       <BlockedSitesModal
         isOpen={showBlockedSitesModal}
         onClose={() => setShowBlockedSitesModal(false)}
-        onEditSite={handleEditSite}
+        policies={activePolicies}
+        onEditPolicy={(policy) => {
+          setShowBlockedSitesModal(false);
+          setEditingPolicy(policy);
+          setShowSiteManager(true);
+        }}
+        onRefresh={fetchDashboardData}
       />
     </>
   );

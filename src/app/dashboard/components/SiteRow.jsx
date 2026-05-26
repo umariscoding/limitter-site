@@ -1,25 +1,26 @@
 "use client";
 
-import { getSiteStatus, formatTimeLimit } from "../utils";
+import { getPolicyStatus, formatMinutes, getPolicyTypeLabel } from "../utils";
 
-export default function SiteRow({ site }) {
-  const status = getSiteStatus(site);
+export default function SiteRow({ policy }) {
+  const status = getPolicyStatus(policy);
+  const state = policy.state || {};
 
   return (
     <div
       className={`flex items-center gap-4 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 ${
-        site.is_active === false ? "opacity-60" : ""
+        !policy.isActive ? "opacity-60" : ""
       }`}
     >
       <div className="flex-1 min-w-0">
         <h3 className="font-medium text-gray-900 dark:text-white truncate">
-          {site.name}
+          {policy.targetLabel}
         </h3>
         <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-          {site.url}
+          {policy.targetKey}
         </p>
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-          ID: {site.id}
+          {getPolicyTypeLabel(policy.type)}
         </p>
       </div>
 
@@ -30,7 +31,12 @@ export default function SiteRow({ site }) {
           {status.label}
         </div>
         <div className="text-xs text-gray-500 dark:text-gray-400">
-          {formatTimeLimit(site.time_limit || 1800)}
+          {formatMinutes(policy.dailyLimitMinutes || 0)}
+          {state.usageTodayMinutes > 0 && (
+            <span className="ml-1 text-gray-400">
+              ({formatMinutes(state.usageTodayMinutes)} used)
+            </span>
+          )}
         </div>
       </div>
     </div>

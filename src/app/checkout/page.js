@@ -9,6 +9,7 @@ import { FaCheck, FaLock, FaSpinner } from "react-icons/fa";
 import { PageLoader } from "../../components/common";
 import { useAuth } from "../../context/AuthContext";
 import { PLANS, OVERRIDE_PRICE, isValidPlan } from "../../lib/plans";
+import { billingApi } from "../../lib/api";
 
 function Card({ title, children }) {
   return (
@@ -70,10 +71,10 @@ function IncludedFeatures({ features }) {
     <div>
       <h3 className="font-medium mb-4">What&apos;s included:</h3>
       <ul className="space-y-3">
-        {features.map((feature) => (
-          <li key={feature} className="flex items-start">
+        {features.filter((f) => f.enabled).map((feature) => (
+          <li key={feature.text} className="flex items-start">
             <FaCheck className="h-5 w-5 text-green-500 mr-2 mt-0.5" />
-            <span className="text-gray-700 dark:text-gray-300">{feature}</span>
+            <span className="text-gray-700 dark:text-gray-300">{feature.text}</span>
           </li>
         ))}
       </ul>
@@ -84,6 +85,7 @@ function IncludedFeatures({ features }) {
 function OrderSummary({
   purchaseType,
   plan,
+  billingCycle,
   overrideQuantity,
   currentPrice,
   onQuantityChange,
@@ -112,7 +114,7 @@ function OrderSummary({
               ${currentPrice}
               {purchaseType === "plan" && (
                 <span className="text-sm text-gray-600 dark:text-gray-400">
-                  /month
+                  {billingCycle === "yearly" ? "/year" : "/month"}
                 </span>
               )}
             </div>
@@ -147,6 +149,7 @@ function ErrorMessage({ error }) {
 function PurchaseButton({
   isLoading,
   purchaseType,
+  billingCycle,
   overrideQuantity,
   currentPrice,
   plan,
@@ -168,7 +171,7 @@ function PurchaseButton({
           overrideQuantity > 1 ? "s" : ""
         } - $${currentPrice}`
       ) : (
-        `Subscribe to ${plan?.name} - $${currentPrice}/month`
+        `Subscribe to ${plan?.name} - $${currentPrice}/${billingCycle === "yearly" ? "year" : "month"}`
       )}
     </button>
   );
@@ -189,6 +192,7 @@ function PurchasePanel({
   error,
   isLoading,
   purchaseType,
+  billingCycle,
   overrideQuantity,
   currentPrice,
   plan,
@@ -201,6 +205,7 @@ function PurchasePanel({
       <PurchaseButton
         isLoading={isLoading}
         purchaseType={purchaseType}
+        billingCycle={billingCycle}
         overrideQuantity={overrideQuantity}
         currentPrice={currentPrice}
         plan={plan}
@@ -219,6 +224,7 @@ function CheckoutContent() {
 
   const [selectedPlan, setSelectedPlan] = useState("");
   const [purchaseType, setPurchaseType] = useState("plan");
+  const [billingCycle, setBillingCycle] = useState("monthly");
   const [overrideQuantity, setOverrideQuantity] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -230,6 +236,7 @@ function CheckoutContent() {
     }
 
     const planFromUrl = searchParams.get("plan");
+    const cycleFromUrl = searchParams.get("cycle");
     const overridesFromUrl = searchParams.get("overrides");
 
     if (overridesFromUrl) {
@@ -241,6 +248,7 @@ function CheckoutContent() {
     if (planFromUrl && isValidPlan(planFromUrl)) {
       setPurchaseType("plan");
       setSelectedPlan(planFromUrl);
+      if (cycleFromUrl === "yearly") setBillingCycle("yearly");
       return;
     }
 
@@ -260,8 +268,11 @@ function CheckoutContent() {
       return "0.00";
     }
 
-    return PLANS[selectedPlan].price.toFixed(2);
-  }, [purchaseType, overrideQuantity, selectedPlan]);
+    const p = PLANS[selectedPlan];
+    return billingCycle === "yearly"
+      ? p.yearlyPrice.toFixed(2)
+      : p.monthlyPrice.toFixed(2);
+  }, [purchaseType, overrideQuantity, selectedPlan, billingCycle]);
 
   const handleCheckout = async () => {
     if (!user) return;
@@ -270,40 +281,32 @@ function CheckoutContent() {
     setError("");
 
     try {
-      const response = await fetch("/api/create-checkout-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          paymentType: purchaseType,
-          quantity: purchaseType === "overrides" ? overrideQuantity : 1,
-          plan: selectedPlan,
-          userId: user.uid,
-        }),
+      const baseUrl = window.location.origin;
+      const data = await billingApi.stripeCreateCheckout({
+        paymentType: purchaseType,
+        plan: purchaseType === "plan" ? selectedPlan : undefined,
+        cycle: purchaseType === "plan" ? billingCycle : undefined,
+        quantity: purchaseType === "overrides" ? overrideQuantity : undefined,
+        successUrl: `${baseUrl}/dashboard?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+        cancelUrl: `${baseUrl}/dashboard?payment=cancelled`,
       });
 
-      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
 
-      if (!response.ok) {
-        throw new Error(
-          data.error || data.details || "Failed to create checkout session",
+      if (data.sessionId) {
+        const stripe = await loadStripe(
+          process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
         );
+        if (!stripe) throw new Error("Failed to load Stripe");
+        await stripe.redirectToCheckout({ sessionId: data.sessionId });
+        return;
       }
 
-      if (!data.sessionId) {
-        throw new Error("No session ID returned from server");
-      }
-
-      const stripe = await loadStripe(
-        process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
-      );
-
-      if (!stripe) {
-        throw new Error("Failed to load Stripe");
-      }
-
-      await stripe.redirectToCheckout({ sessionId: data.sessionId });
+      throw new Error("No checkout URL returned from server");
     } catch (err) {
-      console.error("Failed to create checkout session:", err);
       setError(
         err.message || "Failed to start checkout process. Please try again.",
       );
@@ -348,6 +351,7 @@ function CheckoutContent() {
             <OrderSummary
               purchaseType={purchaseType}
               plan={plan}
+              billingCycle={billingCycle}
               overrideQuantity={overrideQuantity}
               currentPrice={currentPrice}
               onQuantityChange={setOverrideQuantity}
@@ -357,6 +361,7 @@ function CheckoutContent() {
               error={error}
               isLoading={isLoading}
               purchaseType={purchaseType}
+              billingCycle={billingCycle}
               overrideQuantity={overrideQuantity}
               currentPrice={currentPrice}
               plan={plan}

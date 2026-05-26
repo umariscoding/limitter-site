@@ -13,7 +13,7 @@ export default function Settings({ onBack }) {
 
   // Form states
   const [profileData, setProfileData] = useState({
-    profileName: user?.profile_name || '',
+    profileName: user?.displayName || user?.profile_name || '',
     profileEmail: user?.email || ''
   });
 
@@ -24,7 +24,7 @@ export default function Settings({ onBack }) {
   useEffect(() => {
     if (user) {
       setProfileData({
-        profileName: user.profile_name || '',
+        profileName: user.displayName || user.profile_name || '',
         profileEmail: user.email || ''
       });
     }

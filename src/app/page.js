@@ -47,9 +47,9 @@ const plans = [
     featured: false,
     features: [
       { text: "1 device", included: true },
-      { text: "Track 3 websites/apps", included: true },
-      { text: "1-hour fixed lockout", included: true },
-      { text: "$1.99 per override", included: true },
+      { text: "Up to 3 limits", included: true },
+      { text: "3 free overrides/month", included: true },
+      { text: "Custom daily timers", included: true },
       { text: "No AI features", included: false },
     ],
   },
@@ -65,10 +65,10 @@ const plans = [
     badge: "POPULAR",
     features: [
       { text: "Up to 3 devices", included: true },
-      { text: "Unlimited time tracking", included: true },
-      { text: "Custom lockout durations", included: true },
+      { text: "Unlimited limits", included: true },
       { text: "15 free overrides/month", included: true },
-      { text: "AI nudges + sync + basic reports", included: true },
+      { text: "Cross-device sync", included: true },
+      { text: "AI nudges + basic reports", included: true },
     ],
   },
   {
@@ -82,7 +82,7 @@ const plans = [
     featured: false,
     features: [
       { text: "Up to 10 devices", included: true },
-      { text: "100 free overrides/month", included: true },
+      { text: "Unlimited overrides", included: true },
       { text: "AI usage insights + journaling", included: true },
       { text: "90-day encrypted usage history", included: true },
       { text: "Smart AI recommendations", included: true },

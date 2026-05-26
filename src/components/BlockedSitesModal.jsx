@@ -1,21 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAuth } from "../context/AuthContext";
+import { policyApi } from "../lib/api";
+import { getPolicyStatus, formatMinutes, getPolicyTypeLabel } from "../app/dashboard/utils";
 
-export default function BlockedSitesModal({ isOpen, onClose, onEditSite }) {
-  const { 
-    user, 
-    blockedSites, 
-    removeSite 
-  } = useAuth();
-
-  // UI state
+export default function BlockedSitesModal({ isOpen, onClose, policies = [], onEditPolicy, onRefresh }) {
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Reset state when modal opens/closes
   useEffect(() => {
     if (isOpen) {
       setSearchTerm('');
@@ -28,22 +21,18 @@ export default function BlockedSitesModal({ isOpen, onClose, onEditSite }) {
     setTimeout(() => setMessage({ type: '', text: '' }), 3000);
   };
 
-  const handleEdit = (site) => {
+  const handleEdit = (policy) => {
     onClose();
-    onEditSite(site);
+    if (onEditPolicy) onEditPolicy(policy);
   };
 
-  const handleDelete = async (siteId) => {
-    if (!confirm('Are you sure you want to remove this site?')) return;
-
+  const handleArchive = async (policyId) => {
+    if (!confirm('Are you sure you want to remove this limit?')) return;
     setIsLoading(true);
     try {
-      const result = await removeSite(siteId);
-      if (result.success) {
-        showMessage('success', 'Site removed successfully!');
-      } else {
-        showMessage('error', result.error || 'Failed to remove site');
-      }
+      await policyApi.archive(policyId);
+      showMessage('success', 'Limit removed successfully!');
+      if (onRefresh) onRefresh();
     } catch (error) {
       showMessage('error', error.message || 'An error occurred');
     } finally {
@@ -51,9 +40,9 @@ export default function BlockedSitesModal({ isOpen, onClose, onEditSite }) {
     }
   };
 
-  const filteredSites = blockedSites.filter(site => 
-    site.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    site.url?.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredPolicies = policies.filter(p =>
+    p.targetLabel?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    p.targetKey?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   if (!isOpen) return null;
@@ -61,10 +50,9 @@ export default function BlockedSitesModal({ isOpen, onClose, onEditSite }) {
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
-        {/* Header */}
         <div className="p-6 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold">Manage Tracking Sites</h2>
+            <h2 className="text-2xl font-bold">Manage Limits</h2>
             <button
               onClick={onClose}
               className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -75,11 +63,10 @@ export default function BlockedSitesModal({ isOpen, onClose, onEditSite }) {
             </button>
           </div>
 
-          {/* Message Display */}
           {message.text && (
             <div className={`mt-4 p-3 rounded-lg text-sm ${
-              message.type === 'success' 
-                ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800' 
+              message.type === 'success'
+                ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800'
                 : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800'
             }`}>
               {message.text}
@@ -87,10 +74,8 @@ export default function BlockedSitesModal({ isOpen, onClose, onEditSite }) {
           )}
         </div>
 
-        {/* Content */}
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
           <div className="space-y-6">
-            {/* Search Bar */}
             <div className="flex items-center gap-4">
               <div className="relative flex-1">
                 <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -98,7 +83,7 @@ export default function BlockedSitesModal({ isOpen, onClose, onEditSite }) {
                 </svg>
                 <input
                   type="text"
-                  placeholder="Search sites..."
+                  placeholder="Search limits..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent"
@@ -106,8 +91,7 @@ export default function BlockedSitesModal({ isOpen, onClose, onEditSite }) {
               </div>
             </div>
 
-            {/* Sites Grid */}
-            {filteredSites.length === 0 ? (
+            {filteredPolicies.length === 0 ? (
               <div className="text-center py-12">
                 <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
                   <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -115,120 +99,77 @@ export default function BlockedSitesModal({ isOpen, onClose, onEditSite }) {
                   </svg>
                 </div>
                 <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                  {searchTerm ? 'No sites found' : 'No tracking sites yet'}
+                  {searchTerm ? 'No limits found' : 'No limits yet'}
                 </h3>
                 <p className="text-gray-500 dark:text-gray-400 max-w-md mx-auto">
-                  {searchTerm 
-                    ? 'Try adjusting your search terms to find the site you\'re looking for.'
-                    : 'Add your first site to start tracking your browsing time and stay focused on what matters.'
-                  }
+                  {searchTerm
+                    ? 'Try adjusting your search terms.'
+                    : 'Add your first limit to start tracking your usage.'}
                 </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredSites.map((site) => (
-                  <div 
-                    key={site.id} 
-                    className={`bg-gray-50 dark:bg-gray-700 rounded-lg p-4 border border-gray-200 dark:border-gray-600 ${
-                      site.is_active === false ? 'opacity-60' : ''
-                    }`}
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-medium text-gray-900 dark:text-white truncate">
-                          {site.name}
-                        </h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                          {site.url}
-                        </p>
-                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">ID: {site.id}</p>
-                      </div>
-                      <div className={`px-2 py-1 rounded text-xs font-medium flex-shrink-0 ml-2 ${
-                        site.time_remaining === 0 || site.is_blocked
-                          ? 'bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-400'
-                          : site.is_active !== false
-                          ? 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-400'
-                          : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
-                      }`}>
-                        {site.time_remaining === 0 || site.is_blocked ? 'Blocked' : site.is_active !== false ? 'Active' : 'Inactive'}
-                      </div>
-                    </div>
+                {filteredPolicies.map((policy) => {
+                  const status = getPolicyStatus(policy);
+                  const state = policy.state || {};
+                  const usedMinutes = state.usageTodayMinutes || 0;
+                  const remainingMinutes = Math.max(0, (policy.dailyLimitMinutes || 0) - usedMinutes);
 
-                    <div className="space-y-2 mb-4">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600 dark:text-gray-400">Daily Limit:</span>
-                        <span className="font-medium">
-                          {(() => {
-                            const totalSeconds = site.time_limit || 1800; // Default 30 minutes
-                            const hours = Math.floor(totalSeconds / 3600);
-                            const minutes = Math.floor((totalSeconds % 3600) / 60);
-                            const seconds = totalSeconds % 60;
-                            
-                            if (hours > 0) {
-                              return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-                            } else if (minutes > 0) {
-                              return `${minutes}m`;
-                            } else {
-                              return `${seconds}s`;
-                            }
-                          })()}
-                        </span>
+                  return (
+                    <div
+                      key={policy.policyId}
+                      className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 border border-gray-200 dark:border-gray-600"
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-medium text-gray-900 dark:text-white truncate">
+                            {policy.targetLabel}
+                          </h3>
+                          <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                            {policy.targetKey}
+                          </p>
+                          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                            {getPolicyTypeLabel(policy.type)}
+                          </p>
+                        </div>
+                        <div className={`px-2 py-1 rounded text-xs font-medium flex-shrink-0 ml-2 ${status.className}`}>
+                          {status.label}
+                        </div>
                       </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600 dark:text-gray-400">Time Remaining:</span>
-                        <span className="font-medium">
-                          {(() => {
-                            const remainingSeconds = site.time_remaining || 0;
-                            const hours = Math.floor(remainingSeconds / 3600);
-                            const minutes = Math.floor((remainingSeconds % 3600) / 60);
-                            const seconds = remainingSeconds % 60;
-                            
-                            if (remainingSeconds === 0) {
-                              return 'None';
-                            } else if (hours > 0) {
-                              return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-                            } else if (minutes > 0) {
-                              return `${minutes}m`;
-                            } else {
-                              return `${seconds}s`;
-                            }
-                          })()}
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600 dark:text-gray-400">Added:</span>
-                        <span className="font-medium">
-                          {site.created_at ? new Date(site.created_at.seconds * 1000).toLocaleDateString() : 'Recently'}
-                        </span>
-                      </div>
-                    </div>
 
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleEdit(site)}
-                        className={`flex-1 px-3 py-1.5 ${
-                          site.is_active === false
-                            ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed'
-                            : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40'
-                        } text-sm font-medium rounded transition-colors`}
-                        disabled={site.is_active === false}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(site.id)}
-                        disabled={isLoading || site.is_active === false}
-                        className={`flex-1 px-3 py-1.5 ${
-                          site.is_active === false
-                            ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed'
-                            : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40'
-                        } text-sm font-medium rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
-                      >
-                        Delete
-                      </button>
+                      <div className="space-y-2 mb-4">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600 dark:text-gray-400">Daily Limit:</span>
+                          <span className="font-medium">{formatMinutes(policy.dailyLimitMinutes)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600 dark:text-gray-400">Used Today:</span>
+                          <span className="font-medium">{formatMinutes(usedMinutes)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600 dark:text-gray-400">Remaining:</span>
+                          <span className="font-medium">{remainingMinutes > 0 ? formatMinutes(remainingMinutes) : 'None'}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleEdit(policy)}
+                          className="flex-1 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-sm font-medium rounded transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleArchive(policy.policyId)}
+                          disabled={isLoading}
+                          className="flex-1 px-3 py-1.5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 text-sm font-medium rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -236,4 +177,4 @@ export default function BlockedSitesModal({ isOpen, onClose, onEditSite }) {
       </div>
     </div>
   );
-} 
+}
