@@ -85,6 +85,7 @@ export const logIn = async (email, password) => {
         throw new Error('Please verify your email first.');
       }
     }
+    await ensureUserProfile();
     toast.success("Login successful");
     return { user: userCredential.user };
   } catch (error) {

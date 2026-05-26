@@ -86,19 +86,24 @@ export function getPolicyTypeLabel(type) {
 
 export function getSubscriptionFeatures(plan) {
   const currentPlan = plan || "free";
+  const deviceLabel = {
+    free: "1 device, up to 3 limits",
+    pro: "Up to 3 devices, unlimited limits",
+    elite: "Up to 10 devices, unlimited limits",
+    ultra_elite: "Unlimited devices, unlimited limits",
+  };
+  const overrideLabel = {
+    free: "$1.99 per override",
+    pro: "15 free overrides/month",
+    elite: "Unlimited overrides",
+    ultra_elite: "Unlimited overrides",
+  };
+
   const features = [
     "Smart website & app blocking",
-    currentPlan === "free"
-      ? "1 device, up to 3 limits"
-      : currentPlan === "pro"
-        ? "Up to 3 devices, unlimited limits"
-        : "Up to 10 devices, unlimited limits",
+    deviceLabel[currentPlan] || deviceLabel.free,
     "Custom daily timers",
-    currentPlan === "free"
-      ? "3 free overrides/month"
-      : currentPlan === "pro"
-        ? "15 free overrides/month"
-        : "Unlimited overrides",
+    overrideLabel[currentPlan] || overrideLabel.free,
   ];
 
   if (currentPlan === "pro" || currentPlan === "elite" || currentPlan === "ultra_elite") {

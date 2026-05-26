@@ -80,15 +80,28 @@ export default function Dashboard() {
         _raw: sub,
       });
 
-      const pList = Array.isArray(policiesData) ? policiesData : (policiesData?.policies || []);
+      const rawList = Array.isArray(policiesData) ? policiesData : (policiesData?.policies || []);
+      const pList = rawList.map((item) => {
+        if (item.policy) {
+          return {
+            ...item.policy,
+            state: item.policyState || {},
+            nextResetAtMs: item.nextResetAtMs,
+          };
+        }
+        return item;
+      });
       setPolicies(pList);
 
       if (overrideData) {
+        const isUnlimited = overrideData.unlimited === true || overrideData.freeOverridesPerMonth === -1;
+
         setOverrideStats({
-          overrides_left: (overrideData.freeCreditsRemaining || 0) + (overrideData.grantedCreditsRemaining || 0),
-          monthly_limit: overrideData.freeOverridesPerMonth || 0,
-          overrides_used_total: overrideData.totalOverridesUsed || 0,
-          total_overrides_purchased: overrideData.paidOverridesUsed || 0,
+          unlimited: isUnlimited,
+          overrides_left: isUnlimited ? -1 : (overrideData.totalAvailable || 0),
+          monthly_limit: overrideData.freeOverridesPerMonth,
+          overrides_used_total: overrideData.totalUsedThisMonth || 0,
+          total_overrides_purchased: overrideData.grantedUsed || 0,
         });
       }
 

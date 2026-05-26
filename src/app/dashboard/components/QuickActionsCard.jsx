@@ -49,9 +49,11 @@ export default function QuickActionsCard({
           icon={FaDollarSign}
           title="Buy Overrides"
           description={
-            plan === "elite"
-              ? "100 free overrides included"
-              : "Purchase overrides at $1.99 each"
+            plan === "ultra_elite" || plan === "elite"
+              ? "Unlimited overrides included"
+              : plan === "pro"
+                ? "15 free/month, then $1.99 each"
+                : "$1.99 per override"
           }
           href="/checkout?overrides=1"
         />
