@@ -103,6 +103,20 @@ export const overrideApi = {
   getHistory: (cursor) => get(`/api/overrides/history${cursor ? `?cursor=${cursor}` : ''}`),
 };
 
+export const adminApi = {
+  getStats: () => get('/api/admin/stats'),
+  listUsers: (limit = 20, offset = 0, search = '') => {
+    const params = new URLSearchParams();
+    params.set('limit', limit);
+    params.set('offset', offset);
+    if (search) params.set('search', search);
+    return get(`/api/admin/users?${params.toString()}`);
+  },
+  getUser: (uid) => get(`/api/admin/users/${uid}`),
+  listPolicies: (limit = 20, offset = 0) => get(`/api/admin/policies?limit=${limit}&offset=${offset}`),
+  listTransactions: (limit = 20, offset = 0) => get(`/api/admin/transactions?limit=${limit}&offset=${offset}`),
+};
+
 export const billingApi = {
   stripeCreateCheckout: (data) => post('/api/billing/stripe/create-checkout', data),
   stripeVerifySession: (sessionId) => post('/api/billing/stripe/verify-session', { sessionId }),

@@ -3,9 +3,6 @@
 export default function AdminUserModal({
   selectedUser,
   onClose,
-  onGrantOverrides,
-  onChangePlan,
-  onViewUserSites,
   formatActivityTimestamp,
 }) {
   if (!selectedUser) return null;
@@ -89,15 +86,6 @@ export default function AdminUserModal({
                   </span>
                 </div>
 
-                <button
-                  onClick={onViewUserSites}
-                  className="mt-4 w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
-                  </svg>
-                  View User Sites
-                </button>
               </div>
             </div>
 
@@ -114,25 +102,13 @@ export default function AdminUserModal({
                   <div className="text-2xl font-semibold text-gray-900 dark:text-white">
                     {selectedUser.summary?.totalSites || 0}
                   </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Total Sites</div>
-                </div>
-                <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
-                  <div className="text-2xl font-semibold text-gray-900 dark:text-white">
-                    {selectedUser.summary?.activeSites || 0}
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Active Sites</div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">Policies</div>
                 </div>
                 <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
                   <div className="text-2xl font-semibold text-gray-900 dark:text-white">
                     {selectedUser.summary?.overridesLeft || 0}
                   </div>
                   <div className="text-sm text-gray-600 dark:text-gray-400">Overrides Left</div>
-                </div>
-                <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
-                  <div className="text-2xl font-semibold text-gray-900 dark:text-white">
-                    ${selectedUser.profile?.total_spent?.toFixed(2) || "0.00"}
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Total Spent</div>
                 </div>
               </div>
             </div>
@@ -202,44 +178,6 @@ export default function AdminUserModal({
               </div>
             </div>
 
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                Actions
-              </h3>
-
-              <div className="space-y-3">
-                <button
-                  onClick={onGrantOverrides}
-                  className="w-full flex items-center gap-3 p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors border border-blue-600"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  Grant Overrides
-                </button>
-                <button
-                  onClick={onChangePlan}
-                  className="w-full flex items-center gap-3 p-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors border border-gray-600"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                  </svg>
-                  Change Plan
-                </button>
-                <button
-                  onClick={onViewUserSites}
-                  className="w-full flex items-center gap-3 p-3 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg transition-colors border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
-                  </svg>
-                  View Sites
-                </button>
-              </div>
-            </div>
           </div>
         </div>
       </div>

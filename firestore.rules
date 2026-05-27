@@ -7,9 +7,7 @@ service cloud.firestore {
     }
     
     function isAdmin() {
-      return isAuthenticated() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+      return isAuthenticated() && request.auth.token.admin == true;
     }
     
     function isOwner(userId) {
@@ -132,6 +130,12 @@ service cloud.firestore {
     
     match /admin_audit_log/{docId} {
       allow read, write: if isAuthenticated();
+    }
+
+    // Contact messages - anyone can create, admins can read/update/delete
+    match /contact_messages/{messageId} {
+      allow create: if true;
+      allow read, update, delete: if isAuthenticated() && isAdmin();
     }
 
     // Default deny all other access

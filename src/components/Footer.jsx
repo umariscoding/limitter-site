@@ -21,6 +21,7 @@ export default function Footer() {
               <li><Link href="/features" className="text-gray-dark dark:text-gray hover:text-primary">Features</Link></li>
               <li><Link href="/dashboard" className="text-gray-dark dark:text-gray hover:text-primary">Dashboard</Link></li>
               <li><Link href="/checkout?overrides=1" className="text-gray-dark dark:text-gray hover:text-primary">Buy Overrides</Link></li>
+              <li><Link href="/contact" className="text-gray-dark dark:text-gray hover:text-primary">Contact</Link></li>
             </ul>
           </div>
           

@@ -6,6 +6,7 @@ import {
   signOut,
   sendEmailVerification,
 } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 import { toast } from 'react-hot-toast';
 import {
   authApi,
@@ -14,6 +15,7 @@ import {
   usageApi,
   overrideApi,
   billingApi,
+  adminApi,
 } from './api';
 
 const firebaseConfig = {
@@ -33,7 +35,7 @@ if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-export const db = null;
+export const db = getFirestore(app);
 
 export const signUp = async (email, password, metadata = {}) => {
   try {
@@ -347,45 +349,68 @@ export const calculateSiteEfficiency = (site) => {
   return Math.round((remaining / site.time_limit) * 100);
 };
 
-export const getAllUsers = async () => ({ users: [], lastDoc: null });
-export const getUserDetailsWithActivity = async () => null;
+export const getAllUsers = async (lastDoc, limit = 20) => {
+  const offset = lastDoc || 0;
+  const result = await adminApi.listUsers(limit, offset);
+  const users = (result.users || []).map((u) => ({
+    id: u.uid,
+    profile_name: u.displayName || '',
+    profile_email: u.email || '',
+    plan: u.currentPlanCode || 'free',
+  }));
+  return { users, lastDoc: offset + limit };
+};
+
+export const getUserDetailsWithActivity = async (uid) => {
+  const result = await adminApi.getUser(uid);
+  return {
+    profile: {
+      id: result.user.uid,
+      profile_name: result.user.displayName || '',
+      profile_email: result.user.email || '',
+      plan: result.account?.currentPlanCode || 'free',
+      isAdmin: false,
+      created_at: result.user.createdAt ? { seconds: Math.floor(new Date(result.user.createdAt).getTime() / 1000) } : null,
+      total_spent: 0,
+    },
+    summary: {
+      totalSites: result.policiesCount || 0,
+      activeSites: result.policiesCount || 0,
+      overridesLeft: 0,
+    },
+    recentActivity: [],
+  };
+};
+
 export const getUserSites = async () => [];
-export const adminGrantOverrides = async () => { throw new Error('Admin endpoints not available yet'); };
-export const adminChangeUserPlan = async () => { throw new Error('Admin endpoints not available yet'); };
+
 export const adminGetAllSites = async () => ({ sites: [], lastDoc: null });
-export const adminSoftDeleteSite = async () => { throw new Error('Admin endpoints not available yet'); };
-export const adminHardDeleteSite = async () => { throw new Error('Admin endpoints not available yet'); };
-export const adminUpdateSite = async () => { throw new Error('Admin endpoints not available yet'); };
-export const adminGetSystemStats = async () => ({});
-export const adminSearchUsers = async () => [];
+export const adminSoftDeleteSite = async () => {};
+export const adminHardDeleteSite = async () => {};
+export const adminUpdateSite = async () => {};
+
+export const adminGetSystemStats = async () => {
+  const result = await adminApi.getStats();
+  return {
+    users: { total: result.totalUsers || 0, byPlan: {} },
+    sites: { total: 0 },
+    revenue: { total: 0 },
+    transactions: { total: 0 },
+    totalAccounts: result.totalAccounts || 0,
+  };
+};
+
+export const adminSearchUsers = async (searchTerm) => {
+  const result = await adminApi.listUsers(50, 0, searchTerm);
+  return (result.users || []).map((u) => ({
+    id: u.uid,
+    profile_name: u.displayName || '',
+    profile_email: u.email || '',
+    plan: u.currentPlanCode || 'free',
+  }));
+};
+
 export const adminSearchSites = async () => ({ sites: [] });
 export const adminGetAllTransactions = async () => ({ transactions: [], lastDoc: null });
 export const adminSearchTransactions = async () => [];
 export const adminGetTransactionDetails = async () => null;
-export const adminGetCollection = async () => [];
-export const adminUpdateDocument = async () => { throw new Error('Admin endpoints not available yet'); };
-export const adminDeleteDocument = async () => { throw new Error('Admin endpoints not available yet'); };
-export const adminGetDocumentIds = async () => [];
-export const adminGetDocument = async () => null;
-export const initializeAdminStats = async () => {};
-export const recalculateAllStats = async () => {};
-export const getAdminStats = async () => ({});
-export const deleteAllUserSites = async () => {};
-export const grantPlanBenefits = async () => {};
-export const getUserStatistics = async () => ({});
-export const getUserAnalytics = async () => ({});
-export const getSiteAnalytics = async () => ({ sites: [] });
-export const getOverrideAnalytics = async () => ({});
-export const getUsageHistory = async () => ({ history: [] });
-export const getTimeSpentAnalytics = async () => ({});
-export const getUserByEmailOrId = async () => null;
-export const getUserDetails = async () => null;
-export const adminUpdateUserProfile = async () => { throw new Error('Admin endpoints not available yet'); };
-export const addUserActivity = async () => {};
-export const initializeUserProfile = async () => {};
-export const createTransaction = async () => {};
-export const updateSiteTimeTracking = async () => {};
-export const getUserSitesTimeStatus = async () => [];
-export const resetDailySiteTimes = async () => {};
-export const grantOverrideBalance = async () => {};
-export const refundOverride = async () => {};
