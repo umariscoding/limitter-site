@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -37,54 +38,84 @@ const featureCards = [
 const plans = [
   {
     name: "Free",
-    price: "$0",
-    description: "Basic features for casual users",
+    monthlyPrice: "$0",
+    yearlyPrice: "$0",
+    description: "Basic website blocking",
     action: "free",
     buttonClass:
       "bg-gray-light dark:bg-gray-dark/30 text-foreground hover:bg-gray",
     buttonLabelLoggedOut: "Sign Up Free",
     buttonLabelLoggedIn: "Go to Dashboard",
     featured: false,
+    supportsCycle: false,
     features: [
       { text: "1 device", included: true },
-      { text: "Track 3 websites/apps", included: true },
+      { text: "3 websites/apps", included: true },
       { text: "1-hour fixed lockout", included: true },
       { text: "$1.99 per override", included: true },
-      { text: "No AI features", included: false },
+      { text: "Custom timers", included: false },
+      { text: "AI features", included: false },
     ],
   },
   {
     name: "Pro",
-    price: "$4.99",
+    monthlyPrice: "$4.99",
+    yearlyPrice: "$53.89",
     description: "Advanced features for focused individuals",
     action: "pro",
     buttonClass: "bg-primary text-white hover:bg-primary-light",
     buttonLabelLoggedOut: "Get Pro",
     buttonLabelLoggedIn: "Upgrade to Pro",
-    featured: true,
-    badge: "POPULAR",
+    featured: false,
+    supportsCycle: true,
     features: [
       { text: "Up to 3 devices", included: true },
-      { text: "Unlimited time tracking", included: true },
+      { text: "Unlimited tracking", included: true },
       { text: "Custom lockout durations", included: true },
       { text: "15 free overrides/month", included: true },
-      { text: "AI nudges + sync + basic reports", included: true },
+      { text: "AI nudges + sync", included: true },
+      { text: "Basic reports", included: true },
     ],
   },
   {
     name: "Elite",
-    price: "$11.99",
-    description: "Ultimate features for power users",
+    monthlyPrice: "$11.99",
+    yearlyPrice: "$129.49",
+    description: "Unlimited overrides + AI insights",
     action: "elite",
     buttonClass: "bg-accent text-white hover:bg-accent/90",
     buttonLabelLoggedOut: "Get Elite",
     buttonLabelLoggedIn: "Upgrade to Elite",
-    featured: false,
+    featured: true,
+    badge: "MOST POPULAR",
+    supportsCycle: true,
     features: [
       { text: "Up to 10 devices", included: true },
-      { text: "100 free overrides/month", included: true },
-      { text: "AI usage insights + journaling", included: true },
-      { text: "90-day encrypted usage history", included: true },
+      { text: "Unlimited overrides", included: true },
+      { text: "AI usage insights", included: true },
+      { text: "Journaling", included: true },
+      { text: "90-day encrypted history", included: true },
+      { text: "Smart AI recommendations", included: true },
+    ],
+  },
+  {
+    name: "Ultra Elite",
+    monthlyPrice: "$19.99",
+    yearlyPrice: "$215.89",
+    description: "Everything in Elite + unlimited devices",
+    action: "ultra_elite",
+    buttonClass: "bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700",
+    buttonLabelLoggedOut: "Get Ultra Elite",
+    buttonLabelLoggedIn: "Upgrade to Ultra Elite",
+    featured: false,
+    badge: "BEST VALUE",
+    supportsCycle: true,
+    features: [
+      { text: "Unlimited devices", included: true },
+      { text: "Unlimited overrides", included: true },
+      { text: "AI usage insights", included: true },
+      { text: "Journaling", included: true },
+      { text: "90-day encrypted history", included: true },
       { text: "Smart AI recommendations", included: true },
     ],
   },
@@ -168,7 +199,12 @@ function PlanFeature({ text, included }) {
   );
 }
 
-function PlanCard({ plan, user, onSelect }) {
+function PlanCard({ plan, user, billingCycle, onSelect }) {
+  const price = billingCycle === "yearly" && plan.supportsCycle
+    ? plan.yearlyPrice
+    : plan.monthlyPrice;
+  const period = billingCycle === "yearly" && plan.supportsCycle ? "/year" : "/month";
+
   return (
     <div
       className={`rounded-xl p-6 relative ${
@@ -187,9 +223,9 @@ function PlanCard({ plan, user, onSelect }) {
       <p className="text-gray-dark dark:text-gray mb-4">{plan.description}</p>
 
       <div className="text-3xl font-bold mb-6">
-        {plan.price}{" "}
+        {price}{" "}
         <span className="text-sm font-normal text-gray-dark dark:text-gray">
-          /month
+          {period}
         </span>
       </div>
 
@@ -252,6 +288,7 @@ function TestimonialCard({ name, role, initials, avatarClass, rating, text }) {
 export default function Home() {
   const { user } = useAuth();
   const router = useRouter();
+  const [billingCycle, setBillingCycle] = useState("monthly");
 
   const handlePlanSelection = (plan) => {
     if (user) {
@@ -260,11 +297,13 @@ export default function Home() {
         return;
       }
 
-      router.push(`/checkout?plan=${plan}`);
+      const cycleParam = billingCycle === "yearly" ? "&cycle=yearly" : "";
+      router.push(`/checkout?plan=${plan}${cycleParam}`);
       return;
     }
 
-    router.push(`/signup?plan=${plan}`);
+    const cycleParam = billingCycle === "yearly" ? "&cycle=yearly" : "";
+    router.push(`/signup?plan=${plan}${cycleParam}`);
   };
 
   return (
@@ -344,12 +383,45 @@ export default function Home() {
             description="Upgrade to Premium for advanced features and unlimited domain blocking."
           />
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="flex justify-center mb-8">
+            <div className="inline-flex items-center bg-gray-light dark:bg-gray-dark/30 rounded-full p-1">
+              <button
+                onClick={() => setBillingCycle("monthly")}
+                className={`px-5 py-2 rounded-full text-sm font-medium transition-colors ${
+                  billingCycle === "monthly"
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-gray-dark dark:text-gray hover:text-foreground"
+                }`}
+              >
+                Monthly
+              </button>
+              <button
+                onClick={() => setBillingCycle("yearly")}
+                className={`px-5 py-2 rounded-full text-sm font-medium transition-colors flex items-center gap-2 ${
+                  billingCycle === "yearly"
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-gray-dark dark:text-gray hover:text-foreground"
+                }`}
+              >
+                Yearly
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                  billingCycle === "yearly"
+                    ? "bg-white/20 text-white"
+                    : "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
+                }`}>
+                  Save 10%
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {plans.map((plan) => (
               <PlanCard
                 key={plan.name}
                 plan={plan}
                 user={user}
+                billingCycle={billingCycle}
                 onSelect={handlePlanSelection}
               />
             ))}

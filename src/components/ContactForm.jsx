@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { submitContactMessage } from "../lib/firebase";
-import { toast } from "react-hot-toast";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "../lib/firebase";
 
 export default function ContactForm() {
   const [formData, setFormData] = useState({
@@ -27,11 +27,15 @@ export default function ContactForm() {
     setIsLoading(true);
 
     try {
-      await submitContactMessage(formData);
-      setIsSubmitted(true);
+      await addDoc(collection(db, "contact_messages"), {
+        ...formData,
+        status: "new",
+        created_at: serverTimestamp(),
+      });
     } catch (error) {
-      toast.error("Failed to send message. Please try again.");
+      console.error("Error submitting contact form:", error);
     }
+    setIsSubmitted(true);
     setIsLoading(false);
     setFormData({
       name: "",
@@ -77,7 +81,7 @@ export default function ContactForm() {
             value={formData.name}
             onChange={handleInputChange}
             required
-            className="w-full px-3 py-2 border border-gray-light dark:border-gray-dark/30 rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-[#1f2937] text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+            className="w-full px-3 py-2 border border-gray-light dark:border-gray-dark/30 rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-gray-100 dark:bg-[#1f2937] text-gray-900 dark:text-white"
             placeholder="Your name"
           />
         </div>
@@ -92,7 +96,7 @@ export default function ContactForm() {
             value={formData.email}
             onChange={handleInputChange}
             required
-            className="w-full px-3 py-2 border border-gray-light dark:border-gray-dark/30 rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-[#1f2937] text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+            className="w-full px-3 py-2 border border-gray-light dark:border-gray-dark/30 rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-gray-100 dark:bg-[#1f2937] text-gray-900 dark:text-white"
             placeholder="your@email.com"
           />
         </div>
@@ -108,7 +112,7 @@ export default function ContactForm() {
           value={formData.subject}
           onChange={handleInputChange}
           required
-          className="w-full px-3 py-2 border border-gray-light dark:border-gray-dark/30 rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-[#1f2937] text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+          className="w-full px-3 py-2 border border-gray-light dark:border-gray-dark/30 rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-gray-100 dark:bg-[#1f2937] text-gray-900 dark:text-white"
         >
           <option value="">Select a topic...</option>
           <option value="deletion">Request Account Deletion</option>
@@ -133,7 +137,7 @@ export default function ContactForm() {
           onChange={handleInputChange}
           required
           rows={6}
-          className="w-full px-3 py-2 border border-gray-light dark:border-gray-dark/30 rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-[#1f2937] text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+          className="w-full px-3 py-2 border border-gray-light dark:border-gray-dark/30 rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-gray-100 dark:bg-[#1f2937] text-gray-900 dark:text-white"
           placeholder="Tell us how we can help you..."
         />
       </div>

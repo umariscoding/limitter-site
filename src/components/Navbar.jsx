@@ -75,6 +75,8 @@ export default function Navbar({ onNavigate }) {
       } else if (section === 'features') {
         console.log("⚡ Navigating to features");
         router.push('/#features');
+      } else if (section === 'contact') {
+        router.push('/contact');
       } else if (section === 'premium-plans') {
         console.log("💎 Navigating to pricing");
         router.push('/#premium-plans');

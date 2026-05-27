@@ -8,6 +8,8 @@ import OverrideInfo from "./OverrideInfo";
 export default function OverridesCard({ overrideStats, subscription }) {
   if (!overrideStats) return null;
 
+  const isUnlimited = overrideStats.unlimited === true || overrideStats.monthly_limit === -1;
+
   return (
     <SectionCard
       title="Your Overrides"
@@ -23,16 +25,16 @@ export default function OverridesCard({ overrideStats, subscription }) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <OverrideMetric
           label="Available Now"
-          value={overrideStats.overrides || 0}
+          value={isUnlimited ? "\u221E" : (overrideStats.overrides_left || 0)}
           cardClass="bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
           valueClass="text-blue-900 dark:text-blue-100"
         />
         <OverrideMetric
-          label="Total Received"
-          value={overrideStats.total_overrides_purchased || 0}
+          label="Monthly Allowance"
+          value={isUnlimited ? "\u221E" : (overrideStats.monthly_limit || 0)}
           cardClass="bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300"
           valueClass="text-purple-900 dark:text-purple-100"
-          subtext="Free + Purchased"
+          subtext="Free per month"
         />
         <OverrideMetric
           label="Total Used"

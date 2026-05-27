@@ -27,13 +27,10 @@ export default function ProfileCard({ user, subscription, onOpenSettings }) {
 
           <div>
             <p className="font-medium">
-              {user?.profile_name || user?.name || "User"}
+              {user?.displayName || user?.profile_name || "User"}
             </p>
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              {user?.profileEmail || user?.email}
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              ID: {user?.uid}
+              {user?.email || user?.profile_email}
             </p>
           </div>
         </div>
